@@ -46,8 +46,8 @@
 <script>
   const _scr = document.getElementById('screen');
   const BASE_WIDTH  = Math.round(_scr.getBoundingClientRect().width);
-  const BASE_HEIGHT = Math.round(_scr.getBoundingClientRect().height
-                                 + (window.outerHeight - window.innerHeight));
+  const _titleBar   = window.outerHeight * (window.innerWidth / window.outerWidth) - window.innerHeight;
+  const BASE_HEIGHT = Math.ceil(_scr.getBoundingClientRect().height + _titleBar);
 
   function getZoom() { return window.devicePixelRatio || 1; }
 
@@ -62,16 +62,17 @@
 
 <script type="module">
   import { connectAndRun } from './src/app.js';
+  const originalTitle = document.title;
   const el = document.getElementById('screen');
   const gate = document.getElementById('gate');
   const statusEl = document.getElementById('status');
   const status = (t) => { statusEl.textContent = t; };
-  const hideGate = () => { gate.style.display = 'none'; el.focus(); };
+  const hideGate = () => { gate.style.display = 'none'; el.focus(); document.title = originalTitle + ' - File granted'; };
 
   // On load: try to reconnect silently (no gesture). hideGate fires on connect, before the
   // program loop runs (connectAndRun only resolves when the session ends).
   connectAndRun(el, status, false, hideGate)
-    .then((ok) => { if (!ok) status('click “Connect data folder” to start'); });
+    .then((ok) => { if (!ok) { status('click “Connect data folder” to start'); document.title = originalTitle + ' - Please choose folder'; } });
 
   document.getElementById('connect').onclick = () =>
     connectAndRun(el, status, true, hideGate);          // user gesture → folder picker allowed

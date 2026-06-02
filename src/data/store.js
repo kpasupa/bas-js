@@ -38,11 +38,17 @@ export async function tryReconnect(mode = 'readwrite') {
 
 // Prompt the user to choose the data folder; persist it. Must be called from a user gesture.
 export async function pickFolder(mode = 'readwrite') {
-  const h = await window.showDirectoryPicker({ mode });
-  if ((await h.requestPermission({ mode })) !== 'granted') throw new Error('Permission denied');
-  dirHandle = h;
-  await idbSet(h);
-  return h.name;
+  const orig = document.title.replace(' - Please choose folder', '');
+  document.title = orig + ' - Selecting';
+  try {
+    const h = await window.showDirectoryPicker({ mode });
+    if ((await h.requestPermission({ mode })) !== 'granted') throw new Error('Permission denied');
+    dirHandle = h;
+    await idbSet(h);
+    return h.name;
+  } finally {
+    document.title = orig;
+  }
 }
 
 // Re-grant permission on a saved handle (from a user gesture) without re-picking.

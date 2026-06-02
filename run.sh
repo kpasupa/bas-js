@@ -29,4 +29,4 @@ if [ -z "$BROWSER" ]; then
 fi
 
 echo "Launching: $BROWSER"
-"$BROWSER" --allow-file-access-from-files --user-data-dir="$PROFILE" "$HTML" >/dev/null 2>&1 &
+"$BROWSER" --app="file://$HTML" --allow-file-access-from-files --user-data-dir="$PROFILE" --disable-extensions --no-first-run --disable-infobars >/dev/null 2>&1 &

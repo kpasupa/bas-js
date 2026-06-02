@@ -14,7 +14,7 @@
     font-size: 18px; line-height: 1.15; letter-spacing: 0;
     background: #000; color: #aaa; padding: 8px; margin: 0;
     white-space: pre; display: inline-block;
-    width: 80ch; box-sizing: content-box;
+    width: 80ch; height: calc(25 * 1.15em); box-sizing: content-box;
   }
   #screen span { display: inline; }
   .blink { animation: blink 1s steps(1) infinite; }
@@ -43,7 +43,27 @@
     <div id="status"></div>
   </div>
 
-<script type="module">
+<script>
+  function fixSize() {
+    const el = document.getElementById('screen');
+    if (!el) return;
+    const chromeW = window.outerWidth - window.innerWidth;
+    const chromeH = window.outerHeight - window.innerHeight;
+    const zoom = window.devicePixelRatio || 1;
+    const w = el.getBoundingClientRect().width;   // ch-based, font-dependent
+    const h = 25 * 18 * 1.15 + 16;               // 25 rows × (18px × 1.15) + 2×8px padding
+    window.resizeTo(
+      Math.round((w + chromeW) * zoom),
+      Math.round((h + chromeH) * zoom)
+    );
+  }
+
+  fixSize();
+  window.addEventListener('load', fixSize);
+  window.addEventListener('resize', fixSize);
+</script>
+
+<script type=”module”>
   import { connectAndRun } from './src/app.js';
   const el = document.getElementById('screen');
   const gate = document.getElementById('gate');

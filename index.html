@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>bas-js</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #000; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body { display: flex; flex-direction: column; align-items: center; justify-content: center;
          font-family: system-ui, sans-serif; color: #ccc; }
   /* 80×25 terminal */
@@ -44,26 +44,23 @@
   </div>
 
 <script>
+  const _scr = document.getElementById('screen');
+  const BASE_WIDTH  = Math.round(_scr.getBoundingClientRect().width);
+  const BASE_HEIGHT = Math.round(_scr.getBoundingClientRect().height
+                                 + (window.outerHeight - window.innerHeight));
+
+  function getZoom() { return window.devicePixelRatio || 1; }
+
   function fixSize() {
-    const el = document.getElementById('screen');
-    if (!el) return;
-    const chromeW = window.outerWidth - window.innerWidth;
-    const chromeH = window.outerHeight - window.innerHeight;
-    const zoom = window.devicePixelRatio || 1;
-    const w = el.getBoundingClientRect().width;   // ch-based, font-dependent
-    const h = 25 * 18 * 1.15 + 16;               // 25 rows × (18px × 1.15) + 2×8px padding
-    window.resizeTo(
-      Math.round((w + chromeW) * zoom),
-      Math.round((h + chromeH) * zoom)
-    );
+    const zoom = getZoom();
+    window.resizeTo(Math.round(BASE_WIDTH * zoom), Math.round(BASE_HEIGHT * zoom));
   }
 
   fixSize();
-  window.addEventListener('load', fixSize);
   window.addEventListener('resize', fixSize);
 </script>
 
-<script type=”module”>
+<script type="module">
   import { connectAndRun } from './src/app.js';
   const el = document.getElementById('screen');
   const gate = document.getElementById('gate');

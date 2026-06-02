@@ -1,8 +1,8 @@
 @echo off
 REM ── bas-js launcher (Windows) ────────────────────────────────────────────────
-REM Opens index.html in Chrome/Edge with --allow-file-access-from-files so the
-REM page's ES-module imports load over file://. A dedicated --user-data-dir keeps
-REM the saved data-folder permission so it reconnects automatically on later runs.
+REM Opens index.html in Chrome/Edge with --allow-file-access-from-files so the page's
+REM ES-module imports load over file://. A dedicated --user-data-dir keeps the saved
+REM data-folder permission so it reconnects automatically on later runs.
 
 setlocal
 set "HTML=%~dp0index.html"
@@ -26,5 +26,5 @@ if not defined BROWSER (
 )
 
 echo Launching: "%BROWSER%"
-start "" "%BROWSER%" --app="file:///%HTML:\=/%" --allow-file-access-from-files --user-data-dir="%PROFILE%" --disable-extensions --no-first-run --disable-infobars
+start "" "%BROWSER%" --app="%HTML%" --allow-file-access-from-files --user-data-dir="%PROFILE%"
 endlocal

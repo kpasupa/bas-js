@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bas-js</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center;
+         font-family: system-ui, sans-serif; color: #ccc; }
+  /* 80×25 terminal */
+  #screen {
+    font-family: 'Consolas','Menlo','Monaco','DejaVu Sans Mono','Courier New',monospace;
+    font-size: 18px; line-height: 1.15; letter-spacing: 0;
+    background: #000; color: #aaa; padding: 8px; margin: 0;
+    white-space: pre; display: inline-block;
+    width: 80ch; box-sizing: content-box;
+  }
+  #screen span { display: inline; }
+  .blink { animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  /* connect overlay — shown only until a folder is connected */
+  #gate { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px;
+          align-items: center; justify-content: center; background: #000; }
+  #gate h1 { color: #4ade80; font-size: 20px; margin: 0; letter-spacing: 2px; }
+  #gate p { color: #888; font-size: 13px; max-width: 460px; text-align: center; line-height: 1.5; }
+  #connect { font: inherit; font-size: 15px; padding: 10px 22px; border: 1px solid #4ade80;
+             background: #0b0; color: #000; font-weight: 700; border-radius: 6px; cursor: pointer; }
+  #connect:hover { opacity: .9; }
+  #status { color: #fbbf24; font-size: 12px; min-height: 16px; }
+  .thaifont span { font-family: 'Consolas','Menlo','Monaco','Tahoma','Leelawadee UI','Courier New',monospace; }
+</style>
+</head>
+<body>
+  <pre id="screen" class="thaifont"></pre>
+
+  <div id="gate">
+    <h1>bas-js</h1>
+    <p>Run the GW-BASIC system from the data folder.<br>
+       Click below and choose the folder that holds <b>CUSTOMER</b>, <b>CHQ.DAT</b> and the <b>.BAS</b> files.
+       Granted once, it reconnects automatically next time.</p>
+    <button id="connect">📂 Connect data folder</button>
+    <div id="status"></div>
+  </div>
+
+<script type="module">
+  import { connectAndRun } from './src/app.js';
+  const el = document.getElementById('screen');
+  const gate = document.getElementById('gate');
+  const statusEl = document.getElementById('status');
+  const status = (t) => { statusEl.textContent = t; };
+  const hideGate = () => { gate.style.display = 'none'; el.focus(); };
+
+  // On load: try to reconnect silently (no gesture). hideGate fires on connect, before the
+  // program loop runs (connectAndRun only resolves when the session ends).
+  connectAndRun(el, status, false, hideGate)
+    .then((ok) => { if (!ok) status('click “Connect data folder” to start'); });
+
+  document.getElementById('connect').onclick = () =>
+    connectAndRun(el, status, true, hideGate);          // user gesture → folder picker allowed
+
+</script>
+</body>
+</html>

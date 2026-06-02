@@ -1,0 +1,12 @@
+node_modules/
+*.log
+__pycache__/
+.DS_Store
+
+# Local scratch / test artifacts
+_*.html
+
+# Data + program files live in the picked folder, never in the app repo (public)
+*.DAT
+*.BAS
+CUSTOMER

@@ -49,7 +49,10 @@
   const _titleBar   = window.outerHeight * (window.innerWidth / window.outerWidth) - window.innerHeight;
   const BASE_HEIGHT = Math.ceil(_scr.getBoundingClientRect().height + _titleBar);
 
-  function getZoom() { return window.devicePixelRatio || 1; }
+  // Baseline ratio at load: 1 on Windows (logic unchanged), 2 on a Retina Mac. Zoom is
+  // measured relative to it, so HiDPI scaling is ignored while browser zoom still counts.
+  const BASE_DPR = window.devicePixelRatio || 1;
+  function getZoom() { return (window.devicePixelRatio || 1) / BASE_DPR; }
 
   function fixSize() {
     const zoom = getZoom();

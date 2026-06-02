@@ -29,4 +29,5 @@ if [ -z "$BROWSER" ]; then
 fi
 
 echo "Launching: $BROWSER"
-"$BROWSER" --allow-file-access-from-files --user-data-dir="$PROFILE" "$HTML" >/dev/null 2>&1 &
+# --app needs a URL, not a bare path, or the page won't load.
+"$BROWSER" --app="file://$HTML" --allow-file-access-from-files --user-data-dir="$PROFILE" >/dev/null 2>&1 &

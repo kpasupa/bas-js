@@ -1,30 +1,32 @@
-10 REM SAMPLE.BAS - bas-js feature test
+10 REM SAMPLE.BAS - bas-js interpreter feature demonstration
 20 CLS
 30 COLOR 7,0
 40 LOCATE 1,28: COLOR 0,7: PRINT " bas-js SAMPLE ": COLOR 7,0
 50 LOCATE 3,1:  PRINT STRING$(80,45)
 60 LOCATE 5,5:  PRINT "1. Display & Colors"
-70 LOCATE 6,5:  PRINT "2. Input Test"
-80 LOCATE 7,5:  PRINT "3. Loop Test"
+70 LOCATE 6,5:  PRINT "2. Input"
+80 LOCATE 7,5:  PRINT "3. Loop (FOR/NEXT)"
 90 LOCATE 8,5:  PRINT "4. PRINT USING"
 100 LOCATE 9,5: PRINT "5. BEEP"
-110 LOCATE 10,5:PRINT "6. LPRINT (HTML print preview)"
-120 LOCATE 11,5:PRINT "0. Exit"
-125 LOCATE 12,1: PRINT STRING$(80,45)
-130 LOCATE 14,5: COLOR 0,7: PRINT " Choose (0-6): ": COLOR 7,0
-140 LOCATE 14,21: INPUT "",C
+110 LOCATE 10,5:PRINT "6. LPRINT — Table Print Preview"
+115 LOCATE 11,5:PRINT "7. LPRINT — Plain Text Preview"
+120 LOCATE 12,5:PRINT "0. Exit"
+125 LOCATE 13,1: PRINT STRING$(80,45)
+130 LOCATE 15,5: COLOR 0,7: PRINT " Choose (0-7): ": COLOR 7,0
+140 LOCATE 15,21: INPUT "",C
 150 IF C=1 THEN GOTO 1000
 160 IF C=2 THEN GOTO 2000
 170 IF C=3 THEN GOTO 3000
 180 IF C=4 THEN GOTO 4000
 190 IF C=5 THEN GOSUB 5000: GOTO 20
 195 IF C=6 THEN GOTO 6000
+197 IF C=7 THEN GOTO 7000
 200 IF C=0 THEN GOTO 9000
 210 GOTO 20
 
 1000 REM *** DISPLAY & COLORS ***
 1010 CLS
-1020 LOCATE 1,30: PRINT "Color Test"
+1020 LOCATE 1,30: PRINT "Display & Colors"
 1030 LOCATE 3,1
 1040 FOR I=0 TO 7
 1050   COLOR I,0: PRINT "  Color ";I;" ";
@@ -39,51 +41,51 @@
 1140 LOCATE 12,5: COLOR 0,2: PRINT " Green BG ";: COLOR 7,0
 1150 LOCATE 13,5: COLOR 0,4: PRINT " Red BG ";:   COLOR 7,0
 1160 LOCATE 14,5: COLOR 0,1: PRINT " Blue BG ";:  COLOR 7,0
-1170 LOCATE 15,1: PRINT "STRING$(20,42) = "; STRING$(20,42)
-1180 LOCATE 17,5: INPUT "Press ENTER to menu...",X$
+1170 LOCATE 16,1: PRINT "STRING$(20,42) = "; STRING$(20,42)
+1180 LOCATE 18,5: INPUT "Press ENTER to return to menu...",X$
 1190 GOTO 20
 
-2000 REM *** INPUT TEST ***
+2000 REM *** INPUT ***
 2010 CLS
-2020 LOCATE 2,28: PRINT "Input Test"
+2020 LOCATE 2,33: PRINT "Input"
 2030 LOCATE 5,5:  PRINT "Enter your name:"
 2040 LOCATE 6,5:  INPUT "",N$
 2050 LOCATE 8,5:  PRINT "Enter a number (1-100):"
 2060 LOCATE 9,5:  INPUT "",N%
 2070 LOCATE 11,5: COLOR 2,0: PRINT "Hello, ";N$;"!"
 2080 LOCATE 12,5: COLOR 14,0
-2090 IF N% > 50 THEN PRINT "Your number ";N%;" is greater than 50"
-2100 IF N% <= 50 THEN PRINT "Your number ";N%;" is 50 or less"
+2090 IF N% > 50 THEN PRINT "Your number ";N%;" is greater than 50."
+2100 IF N% <= 50 THEN PRINT "Your number ";N%;" is 50 or less."
 2110 COLOR 7,0
-2120 LOCATE 15,5: INPUT "Press ENTER to menu...",X$
+2120 LOCATE 15,5: INPUT "Press ENTER to return to menu...",X$
 2130 GOTO 20
 
-3000 REM *** LOOP TEST ***
+3000 REM *** LOOP (FOR/NEXT) ***
 3010 CLS
-3020 LOCATE 2,28: PRINT "Loop Test"
-3030 LOCATE 4,5: PRINT "Counting with FOR/NEXT:"
+3020 LOCATE 2,30: PRINT "Loop (FOR/NEXT)"
+3030 LOCATE 4,5: PRINT "Forward (1 to 10):"
 3040 LOCATE 6,5
 3050 FOR I=1 TO 10
 3060   PRINT I;" ";
 3070 NEXT I
-3080 LOCATE 8,5: PRINT "Reverse:"
+3080 LOCATE 8,5: PRINT "Reverse (10 to 1):"
 3090 LOCATE 10,5
 3100 FOR I=10 TO 1 STEP -1
 3110   PRINT I;" ";
 3120 NEXT I
-3130 LOCATE 12,5: PRINT "Nested (3x3):"
+3130 LOCATE 12,5: PRINT "Nested 3x3:"
 3140 LOCATE 14,5
 3150 FOR I=1 TO 3
 3160   FOR J=1 TO 3
 3170     PRINT "(";I;",";J;") ";
 3180   NEXT J
 3190 NEXT I
-3200 LOCATE 17,5: INPUT "Press ENTER to menu...",X$
+3200 LOCATE 17,5: INPUT "Press ENTER to return to menu...",X$
 3210 GOTO 20
 
 4000 REM *** PRINT USING ***
 4010 CLS
-4020 LOCATE 2,25: PRINT "PRINT USING Test"
+4020 LOCATE 2,28: PRINT "PRINT USING"
 4030 LOCATE 4,5:  PRINT "Number formatting:"
 4040 LOCATE 6,5
 4050 A = 1234567.89
@@ -91,13 +93,13 @@
 4070 LOCATE 8,5
 4080 B = 42
 4090 PRINT USING "######"; B
-4100 LOCATE 10,5: PRINT "Right-justified numbers:"
+4100 LOCATE 10,5: PRINT "Right-justified columns:"
 4110 LOCATE 12,5
 4120 FOR I=1 TO 5
 4130   PRINT USING "####"; I*111;
 4140   PRINT "  ";
 4150 NEXT I
-4160 LOCATE 15,5: INPUT "Press ENTER to menu...",X$
+4160 LOCATE 15,5: INPUT "Press ENTER to return to menu...",X$
 4170 GOTO 20
 
 5000 REM *** BEEP ***
@@ -107,10 +109,10 @@
 5040 NEXT I
 5050 RETURN
 
-6000 REM *** LPRINT TEST ***
+6000 REM *** LPRINT TABLE PREVIEW ***
 6010 CLS
-6020 LOCATE 2,25: PRINT "LPRINT (HTML Print Preview)"
-6030 LOCATE 4,5: PRINT "Sending report to print preview..."
+6020 LOCATE 2,22: PRINT "LPRINT - Table Print Preview"
+6030 LOCATE 4,5: PRINT "Generating report..."
 6035 T = 0
 6040 LPRINT "bas-js Sample Report"
 6050 LPRINT "Page : 1"
@@ -127,14 +129,38 @@
 6150 LPRINT STRING$(60,45)
 6160 LPRINT "Total";
 6170 LPRINT TAB(35); USING "###,###.##"; T
-6180 LOCATE 6,5: PRINT "Done. Print dialog should open."
-6190 LOCATE 8,5: INPUT "Press ENTER to menu...",X$
+6180 LOCATE 6,5: PRINT "Report sent. Print dialog will open shortly."
+6190 LOCATE 8,5: INPUT "Press ENTER to return to menu...",X$
 6200 GOTO 20
+
+7000 REM *** LPRINT PLAIN TEXT PREVIEW ***
+7010 CLS
+7020 LOCATE 2,20: PRINT "LPRINT - Plain Text Preview"
+7030 LOCATE 4,5: PRINT "Generating plain text receipt..."
+7040 LPRINT "                   bas-js Receipt"
+7050 LPRINT "                   ==============="
+7060 LPRINT ""
+7070 LPRINT "  Date     : 01/07/2026"
+7080 LPRINT "  Receipt# : 00001"
+7090 LPRINT ""
+7100 LPRINT "  Description              Qty      Price"
+7110 LPRINT "  ----------------------------------------"
+7120 LPRINT "  Widget A                   2      25.00"
+7130 LPRINT "  Widget B                   1      15.50"
+7140 LPRINT "  Widget C                   3       8.75"
+7150 LPRINT "  ----------------------------------------"
+7160 LPRINT "  Total                             49.25"
+7170 LPRINT ""
+7180 LPRINT "  Thank you for your business."
+7190 LOCATE 6,5: PRINT "Receipt sent. No column ruler detected."
+7200 LOCATE 7,5: PRINT "Output will appear as monospace plain text."
+7210 LOCATE 9,5: INPUT "Press ENTER to return to menu...",X$
+7220 GOTO 20
 
 9000 REM *** EXIT ***
 9010 CLS
 9020 LOCATE 12,30: COLOR 2,0: PRINT "Goodbye!"
 9030 COLOR 7,0
-9040 LOCATE 14,25: PRINT "bas-js test complete."
-9050 LOCATE 16,30: INPUT "ENTER to exit",X$
+9040 LOCATE 14,23: PRINT "bas-js feature test complete."
+9050 LOCATE 16,30: INPUT "Press ENTER to exit",X$
 9060 SYSTEM

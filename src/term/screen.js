@@ -83,7 +83,12 @@ class Screen {
       const cells = this.cells[r];
       let html = '';
       let run = null;
-      const flush = () => { if (run) html += `<span style="color:${CGA[run.fg]};background:${CGA[run.bg]}"${run.blink ? ' class="blink"' : ''}>${run.text}</span>`; run = null; };
+      const flush = () => {
+        if (!run) return;
+        const cls = run.blink ? 'blink' : run.cursor ? 'cursor-blink' : '';
+        html += `<span style="color:${CGA[run.fg]};background:${CGA[run.bg]}"${cls ? ` class="${cls}"` : ''}>${run.text}</span>`;
+        run = null;
+      };
       for (let c = 0; c < this.cols; c++) {
         const cell = cells[c];
         const isCursor = this.cursorOn && r === this.row - 1 && c === this.col - 1;
@@ -92,8 +97,8 @@ class Screen {
         const blink = !!cell.blink;
         let ch = cell.ch;
         ch = ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch;
-        if (run && run.fg === fg && run.bg === bg && run.blink === blink) run.text += ch;
-        else { flush(); run = { fg, bg, blink, text: ch }; }
+        if (run && run.fg === fg && run.bg === bg && run.blink === blink && !isCursor && !run.cursor) run.text += ch;
+        else { flush(); run = { fg, bg, blink, cursor: isCursor, text: ch }; }
       }
       flush();
       out.push(html);

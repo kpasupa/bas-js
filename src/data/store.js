@@ -19,12 +19,27 @@ function idb() {
 async function idbSet(v) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction(IDB_STORE, 'readwrite'); t.objectStore(IDB_STORE).put(v, IDB_KEY); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
 async function idbGet() { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction(IDB_STORE, 'readonly'); const q = t.objectStore(IDB_STORE).get(IDB_KEY); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
 async function idbDel() { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction(IDB_STORE, 'readwrite'); t.objectStore(IDB_STORE).delete(IDB_KEY); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+async function idbGetKey(key) { const db = await idb(); return new Promise((res, rej) => { const q = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(key); q.onsuccess = () => res(q.result ?? null); q.onerror = () => rej(q.error); }); }
 
 let dirHandle = null;
 
 function isConnected() { return dirHandle !== null; }
 function folderName() { return dirHandle?.name ?? null; }
 async function hasHandle() { try { return !!(await idbGet()); } catch { return false; } }
+
+// Try to reconnect using the active project set by picker.html ({ handle, boot, name }).
+// Returns boot filename if granted, null otherwise.
+async function tryReconnectActive() {
+  try {
+    const active = await idbGetKey('active');
+    if (!active?.handle) return null;
+    if ((await active.handle.queryPermission({ mode: 'readwrite' })) === 'granted') {
+      dirHandle = active.handle;
+      return active.boot || 'PASSWORD';
+    }
+  } catch { /* fall through */ }
+  return null;
+}
 
 // Try to reconnect silently from a saved handle (no user gesture). Returns true if granted.
 async function tryReconnect(mode = 'readwrite') {

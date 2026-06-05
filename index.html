@@ -276,7 +276,7 @@
     const boot   = active && (await active.handle?.queryPermission({ mode: 'readwrite' })) === 'granted'
                    ? await tryReconnectActive() : null;
     if (boot) {
-      window._bas_codec = active.codec === 'none' ? null : undefined;
+      window._bas_codec = active.codec === 'none' ? null : active.codec === 'cp437' ? { display: cp437Display, encode: cp437Encode } : undefined;
       hideGate();
       await connectAndRun(el, gst, false, () => {});
       showGate();

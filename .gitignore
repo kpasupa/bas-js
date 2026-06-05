@@ -11,7 +11,10 @@ _*.html
 *.BAS
 CUSTOMER
 cheque/
-sample/
+
+# Allow sample folder in repo
+!sample/
+!sample/*.BAS
 
 # Browser profile — Chrome runtime data, not source
 browser-profile/

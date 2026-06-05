@@ -15,20 +15,30 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
   const bas = new Basic(s, term, loadBas);
   bas.onPrintReady = (lines) => showPrintPreview(lines, 'Report');
 
+  let prog = boot;
   try {
-    let prog = boot;
     while (prog) {
       const src = await loadBas(prog);
-      if (src == null) { s.color(7, 0); s.locate(25, 1); s.put(`[ program "${prog}" not found in folder ]`); s.render(); break; }
+      if (src == null) {
+        console.error(`[bas] program "${prog}.BAS" not found in folder`);
+        s.color(7, 0); s.locate(25, 1); s.put(`[ "${prog}" not found — press any key ]`); s.render(); await term.inputKey(); break;
+      }
       const res = await bas.runText(src);
       if (!bas.printer.isEmpty()) { showPrintPreview(bas.printer.lines, prog); bas.printer.reset(); }
-      if (res && res.t === 'chain') prog = res.name;
-      else if (res && res.t === 'system') { s.color(7, 0); s.locate(25, 1); s.put('[ exited — SYSTEM ]'); s.render(); break; }
-      else break;
+      if (res && res.t === 'chain') { console.info(`[bas] ${prog}.BAS → CHAIN ${res.name}`); prog = res.name; }
+      else if (res && res.t === 'system') { console.info(`[bas] ${prog}.BAS exited (SYSTEM)`); s.color(7, 0); s.locate(25, 1); s.put('[ exited — SYSTEM ]'); s.render(); break; }
+      else {
+        // Normal END / ran off the end: hold the output on screen until a keypress, so
+        // print-and-end programs (e.g. QUAD.BAS) aren't hidden by the gate the instant they finish.
+        console.info(`[bas] ${prog}.BAS ended`);
+        s.color(7, 0); s.locate(25, 1); s.put('[ program ended — press any key ]'); s.render(); await term.inputKey(); break;
+      }
     }
   } catch (e) {
-    if (e.name !== 'EscapeError') throw e;
-    // ESC pressed — exit silently back to gate
+    // Program-level errors are handled (and logged) here, NOT re-thrown — so connectAndRun's
+    // catch only ever logs connect/setup failures. One error → one log.
+    if (e.name === 'EscapeError') console.info(`[bas] ${prog}.BAS aborted (ESC/abort)`);
+    else console.error(`[bas] runtime error in ${prog}.BAS:`, e);
   } finally {
     window._activeTerm = null;
     term.detach();
@@ -54,6 +64,7 @@ async function connectAndRun(el, status, fromGesture, onConnected) {
     await runApp(el, status, boot);
     return true;
   } catch (e) {
+    console.error('[bas] connectAndRun error:', e);
     if (e.name !== 'AbortError') status && status('error: ' + e.message);
     return false;
   }

@@ -7,7 +7,7 @@ Built to revive old DOS GW-BASIC applications. The runtime is generic — point 
 ## Quick start
 
 1. Clone or download this repo
-2. Open `index.html` in Chrome or Edge (double-click, or use `run.bat` on Windows)
+2. Open `index.html` in Chrome or Edge — double-click, or run `run.bat` (Windows) / `./run.sh` (macOS/Linux) for a dedicated app window
 3. Click **＋ Add folder**, pick the folder containing your `.BAS` files
 4. Set the **boot filename** (the first `.BAS` to run, without extension)
 5. Choose **encoding** for your project (see below)
@@ -96,7 +96,8 @@ The interpreter calls `window._bas_codec.display(s)` for every PRINT/LPRINT outp
 - **Statements:** CLS, COLOR, LOCATE, PRINT, LPRINT, INPUT, INPUT$, INKEY$, BEEP, END, SYSTEM, CHAIN, COMMON
 - **Files:** OPEN / FIELD / GET / PUT / CLOSE / LSET / KILL / NAME..AS (random-access binary files)
 - **Operators:** `+ - * / MOD`, `= <> < > <= >=`, `AND OR NOT`, string concat
-- **Built-ins:** INT, ABS, LEN, VAL, STR$, CHR$, RIGHT$, LEFT$, MID$, STRING$, SPACE$, TAB, SPC, PRINT USING, CVI/MKI$/CVS/CVD/MKS$/MKD$
+- **Math built-ins:** INT, ABS, SQR, SIN, COS, TAN, ATN, LOG, EXP, RND, SGN, FIX
+- **String / misc built-ins:** LEN, VAL, STR$, CHR$, RIGHT$, LEFT$, MID$, STRING$, SPACE$, TAB, SPC, PRINT USING, CVI/MKI$/CVS/CVD/MKS$/MKD$
 
 ## Codecs
 
@@ -120,7 +121,8 @@ picker.html             standalone project manager (optional)
 run.bat                 Windows launcher (dedicated browser profile)
 run.sh                  macOS/Linux launcher
 sample/
-  APP.BAS               sample program testing all interpreter features
+  APP.BAS               feature-demo menu (display, input, loops, PRINT USING, BEEP, LPRINT, CHAIN)
+  MATH.BAS              number demo; receives a value via CHAIN from APP, or asks for input standalone
 src/
   app.js                boot loop + folder connect
   interp/basic.js       GW-BASIC interpreter

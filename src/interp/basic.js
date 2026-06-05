@@ -283,6 +283,7 @@ class Basic {
       case 'str': return n.v;
       case 'var': {
         if (n.name.toUpperCase() === 'INKEY$') return _S;          // polling INKEY$ needs async yield
+        if (n.name.toUpperCase() === 'RND') return Math.random();  // bare RND (no parens)
         return this.getVar(n.name);
       }
       case 'un': { const e = this.evlS(n.e); if (e === _S) return _S; return n.op === '-' ? -num(e) : (truthy(e) ? 0 : -1); }
@@ -619,6 +620,7 @@ class Basic {
         // INKEY$ polls; yield to the event loop so keydown can fire (the GW-BASIC
         // "T$=INKEY$:IF T$=\"\" THEN <loop>" wait-for-key idiom would otherwise hang).
         if (n.name.toUpperCase() === 'INKEY$') { await new Promise((r) => setTimeout(r)); return this.term.inkey(); }
+        if (n.name.toUpperCase() === 'RND') return Math.random();  // bare RND (no parens)
         return this.getVar(n.name);
       }
       case 'un': return n.op === '-' ? -num(await this.evl(n.e)) : (truthy(await this.evl(n.e)) ? 0 : -1);
@@ -649,6 +651,12 @@ class Basic {
   call(name, a) {
     switch (name) {
       case 'INT': return Math.floor(num(a[0])); case 'ABS': return Math.abs(num(a[0]));
+      case 'SQR': return Math.sqrt(num(a[0]));
+      case 'SIN': return Math.sin(num(a[0])); case 'COS': return Math.cos(num(a[0])); case 'TAN': return Math.tan(num(a[0]));
+      case 'ATN': return Math.atan(num(a[0]));
+      case 'LOG': return Math.log(num(a[0])); case 'EXP': return Math.exp(num(a[0]));
+      case 'SGN': return Math.sign(num(a[0])); case 'FIX': return Math.trunc(num(a[0]));
+      case 'RND': return Math.random();        // RND / RND(x): next pseudo-random in [0,1)
       case 'LEN': return String(a[0]).length;
       case 'VAL': return parseFloat(String(a[0]).replace(/\s+/g, '')) || 0; // GW-BASIC VAL ignores all spaces
       case 'CHR$': return String.fromCharCode(num(a[0]) & 0xff);
@@ -665,6 +673,7 @@ class Basic {
       case 'MKD$': return strOf(encodeMbfDoubleDecimal(num(a[0])));
       case 'INKEY$': return this.term.inkey();
     }
+    console.warn(`[bas] unsupported function ${name}() — returning 0`);
     return 0;
   }
 }

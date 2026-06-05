@@ -253,9 +253,9 @@
     if (!pendingHandle) return;
     const boot  = document.getElementById('form-boot').value.trim().toUpperCase() || 'PASSWORD';
     const codec = document.getElementById('form-codec').value;
-    const idx = projects.findIndex(p => p.name === pendingHandle.name);
-    const entry = { handle: pendingHandle, boot, codec, name: pendingHandle.name };
-    if (idx >= 0) projects[idx] = entry; else projects.push(entry);
+    // Always add a new entry — the same folder can be listed multiple times (e.g. different boot
+    // files, or just duplicates). Use the ✕ button to remove unwanted ones; Edit changes one in place.
+    projects.push({ handle: pendingHandle, boot, codec, name: pendingHandle.name });
     await saveProjects(projects);
     pendingHandle = null;
     document.getElementById('add-form').style.display = 'none';

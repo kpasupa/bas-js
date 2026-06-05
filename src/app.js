@@ -39,15 +39,13 @@ export async function runApp(el, status) {
 // connect button (user gesture → folder pick). `onConnected` fires as soon as the folder is
 // granted (so the UI can reveal the screen) — BEFORE the long-running program loop starts.
 // Writes persist through the granted handle.
-// opts.forcePick = true skips regrant and goes straight to the OS folder picker.
-export async function connectAndRun(el, status, fromGesture, onConnected, opts = {}) {
-  const forcePick = opts?.forcePick ?? false;
+export async function connectAndRun(el, status, fromGesture, onConnected) {
   try {
-    let ok = await store.tryReconnect('readwrite');
-    if (!ok && fromGesture && !forcePick) ok = await store.regrant('readwrite');
-    if (!ok && fromGesture) ok = !!(await store.pickFolder('readwrite'));
-    if (!ok) { status && status(fromGesture ? 'permission denied' : ''); return false; }
-    status && status(`connected: ${store.folderName()}`);
+    let ok = await store.tryReconnect('readwrite');                        // silent if previously granted
+    if (!ok && fromGesture) ok = await store.regrant('readwrite');         // re-grant saved handle (no picker)
+    if (!ok && fromGesture) ok = !!(await store.pickFolder('readwrite')); // first time: pick folder
+    if (!ok) { status && status(fromGesture ? 'permission denied' : 'click “Connect data folder”'); return false; }
+    status && status(`connected: ${store.folderName()} — writes persist`);
     if (onConnected) onConnected();
     await runApp(el, status);
     return true;

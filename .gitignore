@@ -10,6 +10,8 @@ _*.html
 *.DAT
 *.BAS
 CUSTOMER
+cheque/
+sample/
 
 # Browser profile — Chrome runtime data, not source
 browser-profile/

@@ -90,8 +90,9 @@
       <input id="form-boot" type="text" value="PASSWORD" spellcheck="false">
       <label>Encoding</label>
       <select id="form-codec">
-        <option value="ku42">KU42 (Thai)</option>
-        <option value="none">None (ASCII / raw bytes)</option>
+        <option value="none">0 — None (raw bytes)</option>
+        <option value="cp437" selected>1 — CP437 (DOS default)</option>
+        <option value="ku42">2 — KU42 (Thai)</option>
       </select>
       <div class="form-row">
         <button class="btn btn-run" id="form-save">Save</button>
@@ -115,6 +116,7 @@
 
 <script src="src/codec/bytes.js"></script>
 <script src="src/codec/date.js"></script>
+<script src="src/codec/cp437.js"></script>
 <script src="src/codec/ku42.js"></script>
 <script src="src/codec/mbf.js"></script>
 <script src="src/data/addressing.js"></script>
@@ -177,7 +179,7 @@
       d.innerHTML = `
         <div class="proj-info">
           <div class="proj-name">${gateEsc(p.name)}</div>
-          <div class="proj-boot">${gateEsc(p.boot)}.BAS &nbsp;·&nbsp; ${p.codec === 'none' ? 'raw' : 'KU42'}</div>
+          <div class="proj-boot">${gateEsc(p.boot)}.BAS &nbsp;·&nbsp; ${{none:'0-raw',cp437:'1-CP437',ku42:'2-KU42'}[p.codec] ?? '2-KU42'}</div>
           <div class="proj-st" id="pst-${i}"></div>
         </div>
         <button class="btn btn-run  btn-connect" data-i="${i}">Run</button>
@@ -207,7 +209,7 @@
         const perm = await p.handle.requestPermission({ mode: 'readwrite' });
         if (perm !== 'granted') { gst('Permission denied.', '#f87171'); return; }
         await setActiveProject({ handle: p.handle, boot: p.boot, name: p.name, codec: p.codec });
-        window._bas_codec = p.codec === 'none' ? null : undefined;
+        window._bas_codec = p.codec === 'none' ? null : p.codec === 'cp437' ? { display: cp437Display, encode: cp437Encode } : undefined;
         gst('');
         hideGate();
         await connectAndRun(el, gst, false, () => {});
@@ -218,10 +220,10 @@
     if (btn.classList.contains('btn-edit')) {
       const newBoot = prompt('Boot file (without .BAS):', p.boot);
       if (newBoot?.trim()) projects[i].boot = newBoot.trim().toUpperCase();
-      const codecs = ['ku42', 'none'];
+      const codecs = ['none', 'cp437', 'ku42'];
       const cur = codecs.indexOf(p.codec ?? 'ku42');
-      const newCodec = prompt('Encoding — 0: KU42 (Thai)  1: None (raw)', cur >= 0 ? cur : 0);
-      if (newCodec !== null) projects[i].codec = codecs[+newCodec] ?? 'ku42';
+      const newCodec = prompt('Encoding — 0: None (raw)  1: CP437 (DOS)  2: KU42 (Thai)', cur >= 0 ? cur : 1);
+      if (newCodec !== null) projects[i].codec = codecs[+newCodec] ?? 'cp437';
       await saveProjects(projects);
       renderProjects();
     }

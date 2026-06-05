@@ -119,7 +119,7 @@ function parseStatement(c) {
       case 'CLOSE': { c.next(); skipHash(c); let fileno = null; if (!c.eof() && c.peek().k === 'num') fileno = c.next().v; return { t: 'close', fileno }; }
       case 'KILL': { c.next(); return { t: 'kill', name: parseExpr(c) }; }
       case 'NAME': { c.next(); const from = parseExpr(c); if (kw(c.peek(), 'AS')) c.next(); return { t: 'name', from, to: parseExpr(c) }; }
-      case 'LSET': case 'RSET': { c.next(); const name = c.next().v; c.next(); return { t: 'lset', name, expr: parseExpr(c) }; }
+      case 'LSET': case 'RSET': { c.next(); const name = c.next().v; c.next(); return { t: 'lset', name, right: w === 'RSET', expr: parseExpr(c) }; }
       case 'SWAP': { c.next(); const a = c.next().v; if (!c.eof() && c.peek().k === 'comma') c.next(); const b = c.next().v; return { t: 'swap', a, b }; }
       case 'DATA': { c.next(); return { t: 'data', values: parseDataItems(c) }; }  // consumes rest of line
       case 'READ': { c.next(); const vars = [c.next().v]; while (!c.eof() && c.peek().k === 'comma') { c.next(); vars.push(c.next().v); } return { t: 'read', vars }; }
@@ -390,6 +390,15 @@ class Basic {
     return (suf === '$' || suf === '%' || suf === '#') ? base + suf : base;
   }
   findField(name) { for (const fn in this.files) { const f = this.files[fn]; if (f.fields && name in f.fields) return { f, ...f.fields[name] }; } return null; }
+  // LSET/RSET: place a value into a FIELD buffer, space-padded to the field width. LSET
+  // left-justifies (pads right); RSET right-justifies (pads left). Overlong values truncate.
+  // For a non-field name, both just assign the variable.
+  fieldSet(name, s, right) {
+    const fv = this.findField(name);
+    if (!fv) { this.setVar(name, s); return; }
+    const L = fv.len, n = Math.min(s.length, L), pad = right ? L - n : 0;
+    for (let i = 0; i < L; i++) { const si = i - pad; fv.f.buffer[fv.start + i] = (si >= 0 && si < n) ? s.charCodeAt(si) & 0xff : 0x20; }
+  }
   getVar(name) {
     const fv = this.findField(name);
     if (fv) return strOf(fv.f.buffer.subarray(fv.start, fv.start + fv.len));
@@ -570,10 +579,8 @@ class Basic {
       // NOTE: 'close' is intentionally NOT handled here — it must defer to async closeFile()
       // (below, via _S) so buffered scratch files get flushed to disk. See the _S list.
       case 'lset': {
-        const val = this.evlS(st.expr); if (val === _S) return _S; const s = String(val);
-        const fv = this.findField(st.name);
-        if (fv) for (let i = 0; i < fv.len; i++) fv.f.buffer[fv.start + i] = i < s.length ? s.charCodeAt(i) & 0xff : 0x20;
-        else this.setVar(st.name, s);
+        const val = this.evlS(st.expr); if (val === _S) return _S;
+        this.fieldSet(st.name, String(val), st.right);
         return null;
       }
       case 'if': {
@@ -810,13 +817,7 @@ class Basic {
       case 'onerror': this.onErrorLine = st.line; return null;
       case 'raiseerror': { const code = num(await this.evl(st.code)); const e = new Error('BASIC error ' + code); e.basCode = code; throw e; }
       case 'resume': return { t: 'resume', mode: st.mode, line: st.line };
-      case 'lset': {
-        const val = String(await this.evl(st.expr));
-        const fv = this.findField(st.name);
-        if (fv) for (let i = 0; i < fv.len; i++) fv.f.buffer[fv.start + i] = i < val.length ? val.charCodeAt(i) & 0xff : 0x20;
-        else this.setVar(st.name, val);
-        return null;
-      }
+      case 'lset': { this.fieldSet(st.name, String(await this.evl(st.expr)), st.right); return null; }
       case 'if': return this.runStatements(truthy(await this.evl(st.cond)) ? st.then : st.else);
       case 'kill': await kill(fileName(await this.evl(st.name))); return null;
       case 'name': await rename(fileName(await this.evl(st.from)), fileName(await this.evl(st.to))); return null;

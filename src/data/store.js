@@ -26,6 +26,7 @@ let dirHandle = null;
 
 export function isConnected() { return dirHandle !== null; }
 export function folderName() { return dirHandle?.name ?? null; }
+export async function hasHandle() { try { return !!(await idbGet()); } catch { return false; } }
 
 // Try to reconnect silently from a saved handle (no user gesture). Returns true if granted.
 export async function tryReconnect(mode = 'readwrite') {
@@ -38,7 +39,7 @@ export async function tryReconnect(mode = 'readwrite') {
 
 // Prompt the user to choose the data folder; persist it. Must be called from a user gesture.
 export async function pickFolder(mode = 'readwrite') {
-  const orig = document.title.replace(' - Please choose folder', '');
+  const orig = document.title.replace(/ - .+$/, '');
   document.title = orig + ' - Selecting';
   try {
     const h = await window.showDirectoryPicker({ mode });

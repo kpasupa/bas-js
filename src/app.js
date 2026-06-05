@@ -41,8 +41,9 @@ export async function runApp(el, status) {
 // Writes persist through the granted handle.
 export async function connectAndRun(el, status, fromGesture, onConnected) {
   try {
-    let ok = await store.tryReconnect('readwrite');           // silent if previously granted
-    if (!ok && fromGesture) ok = !!(await store.pickFolder('readwrite')); // pick on first run
+    let ok = await store.tryReconnect('readwrite');                        // silent if previously granted
+    if (!ok && fromGesture) ok = await store.regrant('readwrite');         // re-grant saved handle (no picker)
+    if (!ok && fromGesture) ok = !!(await store.pickFolder('readwrite')); // first time: pick folder
     if (!ok) { status && status(fromGesture ? 'permission denied' : 'click “Connect data folder”'); return false; }
     status && status(`connected: ${store.folderName()} — writes persist`);
     if (onConnected) onConnected();

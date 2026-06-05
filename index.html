@@ -65,6 +65,7 @@
 
 <script type="module">
   import { connectAndRun } from './src/app.js';
+  import { hasHandle } from './src/data/store.js';
   const originalTitle = document.title;
   const el = document.getElementById('screen');
   const gate = document.getElementById('gate');
@@ -75,7 +76,7 @@
   // On load: try to reconnect silently (no gesture). hideGate fires on connect, before the
   // program loop runs (connectAndRun only resolves when the session ends).
   connectAndRun(el, status, false, hideGate)
-    .then((ok) => { if (!ok) { status('click “Connect data folder” to start'); document.title = originalTitle + ' - Please choose folder'; } });
+    .then(async (ok) => { if (!ok) { status('click “Connect data folder” to start'); document.title = originalTitle + ((await hasHandle()) ? ' - Please reconnect' : ' - Please choose folder'); } });
 
   document.getElementById('connect').onclick = () =>
     connectAndRun(el, status, true, hideGate);          // user gesture → folder picker allowed

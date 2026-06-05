@@ -209,5 +209,14 @@ function showPrintPreview(lines, title = 'Report') {
   const doc = frame.contentWindow.document;
   doc.open(); doc.write(html); doc.close();
   // Print once, after the document has rendered (a tick lets Thai fonts/layout settle).
-  setTimeout(() => { try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) { /* preview unavailable */ } }, 200);
+  // On afterprint: remove the frame (releases its focus) then refocus the screen.
+  setTimeout(() => {
+    try {
+      frame.contentWindow.addEventListener('afterprint', () => {
+        setTimeout(() => { frame.remove(); document.getElementById('screen')?.focus(); }, 100);
+      }, { once: true });
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+    } catch (e) { /* preview unavailable */ }
+  }, 200);
 }

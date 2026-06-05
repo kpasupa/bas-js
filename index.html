@@ -92,24 +92,28 @@
   const status  = (t) => { statusEl.textContent = t; };
   const hideGate = () => { gate.style.display = 'none'; el.focus(); document.title = originalTitle + ' - File granted'; };
 
-  // On load: try silent reconnect (succeeds if browser session still has permission).
-  connectAndRun(el, status, false, hideGate).then(async (ok) => {
-    if (ok) return;
-
-    const h = await savedHandle();
+  // Fetch saved handle immediately (parallel to the reconnect attempt) so gate
+  // content is visible as soon as IDB resolves rather than after connectAndRun settles.
+  const hPromise = savedHandle();
+  hPromise.then(h => {
+    if (gate.style.display === 'none') return; // warm reconnect already hid the gate
     if (h) {
-      // Known folder — ask user to re-grant or change
       document.getElementById('folder-name').textContent = `”${h.name}”`;
       document.getElementById('gate-reconnect').style.display = '';
       document.getElementById('btn-allow').onclick  = () => connectAndRun(el, status, true, hideGate);
       document.getElementById('btn-change').onclick = () => connectAndRun(el, status, true, hideGate, { forcePick: true });
-      document.title = originalTitle + ' - Please reconnect';
     } else {
-      // First run — no handle saved yet
       document.getElementById('gate-first').style.display = '';
       document.getElementById('btn-pick').onclick = () => connectAndRun(el, status, true, hideGate);
-      document.title = originalTitle + ' - Please choose folder';
     }
+  });
+
+  // On load: try silent reconnect (succeeds if browser session still has permission).
+  // Title is set only after connectAndRun fails so run.bat never sees a false “Please reconnect”.
+  connectAndRun(el, status, false, hideGate).then(async (ok) => {
+    if (ok) return;
+    const h = await hPromise;
+    document.title = originalTitle + (h ? ' - Please reconnect' : ' - Please choose folder');
   });
 </script>
 </body>

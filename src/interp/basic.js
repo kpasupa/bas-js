@@ -4,7 +4,7 @@
 // Supports: line-numbered flow, GOTO/GOSUB/RETURN/ON..GOTO, IF/THEN/ELSE (inline stmts &
 // line-number targets), multi-statement ':' lines, FOR/NEXT, CLS/COLOR/LOCATE/BEEP,
 // PRINT/LPRINT (with ; , TAB() SPC() and PRINT USING), INPUT, CHAIN/END/SYSTEM, assignment,
-// COMMON (no-op; all vars persist across CHAIN), random files (OPEN/FIELD/GET/PUT/CLOSE/LSET),
+// COMMON (passes declared scalars + arrays across CHAIN), random files (OPEN/FIELD/GET/PUT/CLOSE/LSET),
 // CVI/MKI$/CVS/CVD/MKS$/MKD$, and INT/RIGHT$/LEFT$/MID$/STR$/STRING$/SPACE$/CHR$/ABS/LEN/VAL
 // /INKEY$, operators + - * / MOD, = <> < > <= >=, AND/OR/NOT, string concat.
 //
@@ -71,7 +71,17 @@ function parseStatement(c) {
     const w = tok.v.toUpperCase();
     switch (w) {
       case 'REM': while (!c.eof()) c.next(); return { t: 'rem' };
-      case 'COMMON': { c.next(); const vars = []; while (!c.eof() && c.peek().k !== 'colon') { const t = c.next(); if (t.k === 'id') vars.push(t.v); } return { t: 'common', vars }; }
+      case 'COMMON': {
+        c.next(); const vars = [], arrs = [];
+        while (!c.eof() && c.peek().k !== 'colon') {
+          const t = c.next();
+          if (t.k === 'id') {
+            if (c.peek() && c.peek().k === 'lp') { c.next(); if (c.peek() && c.peek().k === 'rp') c.next(); arrs.push(t.v); }  // COMMON A() → array
+            else vars.push(t.v);
+          }
+        }
+        return { t: 'common', vars, arrs };
+      }
       case 'CLS': c.next(); return { t: 'cls' };
       case 'BEEP': c.next(); return { t: 'beep' };
       case 'END': c.next(); return { t: 'end' };
@@ -114,8 +124,8 @@ function parseStatement(c) {
       }
       case 'OPEN': return parseOpen(c);
       case 'FIELD': return parseField(c);
-      case 'GET': { c.next(); skipHash(c); const fileno = c.next().v; if (!c.eof() && c.peek().k === 'comma') c.next(); return { t: 'get', fileno, rec: parseExpr(c) }; }
-      case 'PUT': { c.next(); skipHash(c); const fileno = c.next().v; if (!c.eof() && c.peek().k === 'comma') c.next(); return { t: 'put', fileno, rec: parseExpr(c) }; }
+      case 'GET': { c.next(); if (c.peek() && (c.peek().k === 'lp' || kw(c.peek(), 'STEP'))) { const p1 = parseCoord(c); if (c.peek() && c.peek().k === 'op' && c.peek().v === '-') c.next(); const p2 = parseCoord(c); if (c.peek() && c.peek().k === 'comma') c.next(); return { t: 'gget', x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, arr: c.next().v }; } skipHash(c); const fileno = c.next().v; if (!c.eof() && c.peek().k === 'comma') c.next(); return { t: 'get', fileno, rec: parseExpr(c) }; }
+      case 'PUT': { c.next(); if (c.peek() && (c.peek().k === 'lp' || kw(c.peek(), 'STEP'))) { const p = parseCoord(c); if (c.peek() && c.peek().k === 'comma') c.next(); const arr = c.next().v; let pmode = null; if (c.peek() && c.peek().k === 'comma') { c.next(); pmode = c.next().v; } return { t: 'gput', x: p.x, y: p.y, arr, pmode }; } skipHash(c); const fileno = c.next().v; if (!c.eof() && c.peek().k === 'comma') c.next(); return { t: 'put', fileno, rec: parseExpr(c) }; }
       case 'CLOSE': { c.next(); skipHash(c); let fileno = null; if (!c.eof() && c.peek().k === 'num') fileno = c.next().v; return { t: 'close', fileno }; }
       case 'KILL': { c.next(); return { t: 'kill', name: parseExpr(c) }; }
       case 'NAME': { c.next(); const from = parseExpr(c); if (kw(c.peek(), 'AS')) c.next(); return { t: 'name', from, to: parseExpr(c) }; }
@@ -167,6 +177,28 @@ function parseStatement(c) {
       case 'WIDTH': case 'KEY': c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' };
       case 'TRON': c.next(); return { t: 'tron', on: true };
       case 'TROFF': c.next(); return { t: 'tron', on: false };
+      case 'SOUND': { c.next(); const freq = parseExpr(c); if (c.peek() && c.peek().k === 'comma') c.next(); const dur = parseExpr(c); return { t: 'sound', freq, dur }; }
+      case 'PLAY': { c.next(); return { t: 'play', str: parseExpr(c) }; }
+      case 'DRAW': { c.next(); return { t: 'draw', str: parseExpr(c) }; }
+      case 'SCREEN': { c.next(); const mode = parseExpr(c); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'gscreen', mode }; }
+      case 'PSET': case 'PRESET': { const preset = w === 'PRESET'; c.next(); const p = parseCoord(c); let color = null; if (c.peek() && c.peek().k === 'comma') { c.next(); color = parseExpr(c); } return { t: 'pset', preset, x: p.x, y: p.y, step: p.step, color }; }
+      case 'CIRCLE': {
+        c.next(); const p = parseCoord(c); if (c.peek() && c.peek().k === 'comma') c.next(); const r = parseExpr(c);
+        const opt = () => { if (c.peek() && c.peek().k === 'comma') { c.next(); return (!c.eof() && c.peek().k !== 'comma' && c.peek().k !== 'colon') ? parseExpr(c) : null; } return null; };
+        const color = opt(), start = opt(), end = opt(), aspect = opt();
+        return { t: 'circle', x: p.x, y: p.y, r, color, start, end, aspect };
+      }
+      case 'PAINT': { c.next(); const p = parseCoord(c); let color = null, border = null; if (c.peek() && c.peek().k === 'comma') { c.next(); if (!(c.peek() && c.peek().k === 'comma')) color = parseExpr(c); } if (c.peek() && c.peek().k === 'comma') { c.next(); border = parseExpr(c); } return { t: 'paint', x: p.x, y: p.y, color, border }; }
+      case 'PALETTE': { c.next(); if (c.eof() || c.peek().k === 'colon') return { t: 'palette', attr: null, col: null }; const attr = parseExpr(c); if (c.peek() && c.peek().k === 'comma') c.next(); const col = parseExpr(c); return { t: 'palette', attr, col }; }
+      case 'WINDOW': { c.next(); if (c.eof() || c.peek().k === 'colon') return { t: 'gwindow', x1: null }; if (kw(c.peek(), 'SCREEN')) c.next(); const p1 = parseCoord(c); if (c.peek() && c.peek().k === 'op' && c.peek().v === '-') c.next(); const p2 = parseCoord(c); return { t: 'gwindow', x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y }; }
+      case 'VIEW': {
+        c.next();
+        if (kw(c.peek(), 'PRINT')) { while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'viewprint' }; }
+        if (c.eof() || c.peek().k === 'colon') return { t: 'gview', x1: null };
+        if (kw(c.peek(), 'SCREEN')) c.next();
+        const p1 = parseCoord(c); if (c.peek() && c.peek().k === 'op' && c.peek().v === '-') c.next(); const p2 = parseCoord(c);
+        return { t: 'gview', x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
+      }
       case 'RESET': c.next(); return { t: 'close', fileno: null };   // RESET = close all open files
       case 'LINE': {
         c.next();
@@ -178,8 +210,14 @@ function parseStatement(c) {
           if (c.peek() && c.peek().k === 'str') { prompt = c.next().v; if (!c.eof() && (c.peek().k === 'semi' || c.peek().k === 'comma')) c.next(); }
           if (c.peek() && c.peek().k === 'id') return { t: 'lineinput', prompt, var: c.next().v };
         }
-        // LINE (graphics) — not yet supported; skip the rest
-        while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' };
+        // graphics: LINE [(x1,y1)]-(x2,y2) [,color [,B|BF]]
+        let x1 = null, y1 = null, step1 = false;
+        if (c.peek() && (c.peek().k === 'lp' || kw(c.peek(), 'STEP'))) { const p = parseCoord(c); x1 = p.x; y1 = p.y; step1 = p.step; }
+        if (c.peek() && c.peek().k === 'op' && c.peek().v === '-') c.next();
+        const p2 = parseCoord(c); let color = null, box = '';
+        if (c.peek() && c.peek().k === 'comma') { c.next(); if (!(c.peek() && c.peek().k === 'comma')) color = parseExpr(c); }
+        if (c.peek() && c.peek().k === 'comma') { c.next(); if (c.peek() && c.peek().k === 'id') box = c.next().v.toUpperCase(); }
+        return { t: 'gline', x1, y1, step1, x2: p2.x, y2: p2.y, step2: p2.step, color, box };
       }
     }
   }
@@ -235,6 +273,14 @@ function parseOpen(c) {
     else if (t.k === 'id' && t.v.toUpperCase() === 'FOR') { const m = c.next().v.toUpperCase(); mode = m === 'INPUT' ? 'input' : m === 'OUTPUT' ? 'output' : m === 'APPEND' ? 'append' : 'random'; }
   }
   return { t: 'open', name, fileno, len, mode };
+}
+
+// Graphics coordinate "(x,y)" with optional STEP (relative) prefix.
+function parseCoord(c) {
+  let step = false;
+  if (kw(c.peek(), 'STEP')) { c.next(); step = true; }
+  c.next(); /*lp*/ const x = parseExpr(c); c.next(); /*comma*/ const y = parseExpr(c); c.next(); /*rp*/
+  return { x, y, step };
 }
 
 function parseField(c) {
@@ -368,6 +414,7 @@ const BUILTINS = new Set([
   'CINT', 'CSNG', 'CDBL', 'LEN', 'VAL', 'CHR$', 'STR$', 'RIGHT$', 'LEFT$', 'MID$',
   'STRING$', 'SPACE$', 'ASC', 'INSTR', 'HEX$', 'OCT$',
   'CVI', 'MKI$', 'CVS', 'MKS$', 'CVD', 'MKD$', 'INKEY$', 'FRE', 'POS', 'EOF', 'LOF', 'LOC',
+  'POINT', 'PMAP', 'SCREEN',
 ]);
 
 // DEFtype → suffix used by setVar/getVar for default-typed (suffixless) variables.
@@ -375,7 +422,7 @@ const DEF2SUF = { int: '%', str: '$', dbl: '#', sng: '!' };
 
 // ── interpreter ───────────────────────────────────────────────────────────────
 class Basic {
-  constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.arrays = {}; this.optionBase = 0; this.defType = {}; this.fns = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.onPrintReady = null; this.rndState = 0x2545f4914f6cdd1d & 0xffffffff; this.rndLast = 0; this.onErrorLine = 0; this.errCode = 0; this.errLineNo = 0; this.errIp = 0; this.trace = false; }
+  constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.arrays = {}; this.optionBase = 0; this.defType = {}; this.fns = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.commonArrs = new Set(); this.onPrintReady = null; this.audio = null; this.gfx = null; this.rndState = 0x2545f4914f6cdd1d & 0xffffffff; this.rndLast = 0; this.onErrorLine = 0; this.errCode = 0; this.errLineNo = 0; this.errIp = 0; this.trace = false; }
 
   // Seedable PRNG (mulberry32) behind RND. Fixed default seed → same sequence every run, as
   // GW-BASIC; RANDOMIZE / RND(neg) reseed it. rndLast lets RND(0) repeat the previous value.
@@ -514,8 +561,8 @@ class Basic {
   execS(st) {
     switch (st.t) {
       case 'rem': return null;
-      case 'common': this.commonVars = new Set(st.vars.map((v) => this.varKey(v))); return null;
-      case 'cls': this.s.cls(); return null;
+      case 'common': this.commonVars = new Set(st.vars.map((v) => this.varKey(v))); this.commonArrs = new Set((st.arrs || []).map((v) => this.varKey(v))); return null;
+      case 'cls': if (this.gfx && this.gfx.active()) this.gfx.cls(); else this.s.cls(); return null;
       case 'beep': beep(); return null;
       case 'end': return { t: 'end' };
       case 'system': return { t: 'system' };
@@ -525,7 +572,7 @@ class Basic {
       // gosub recurses into a subroutine that may block partway; defer to the async path so a
       // blocking op there can't cause partial re-execution.
       case 'gosub': return _S;
-      case 'color': { const a = this.evlS(st.args[0]); if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; this.s.color(num(a), b != null ? num(b) : null); return null; }
+      case 'color': { const a = this.evlS(st.args[0]); if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; this.s.color(num(a), b != null ? num(b) : null); if (this.gfx && this.gfx.active()) this.gfx.color(num(a), b != null ? num(b) : null); return null; }
       case 'locate': { const a = this.evlS(st.args[0]); if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; this.s.locate(num(a), b != null ? num(b) : null); return null; }
       case 'assign': {
         const v = this.evlS(st.expr); if (v === _S) return _S;
@@ -590,7 +637,7 @@ class Basic {
         return this.runStatementsS(branch);
       }
       // Blocking / async-only (disk I/O or input):
-      case 'input': case 'lineinput': case 'finput': case 'flineinput': case 'open': case 'put': case 'chain': case 'close': case 'kill': case 'name': case 'clear': return _S;
+      case 'input': case 'lineinput': case 'finput': case 'flineinput': case 'open': case 'put': case 'chain': case 'close': case 'kill': case 'name': case 'clear': case 'sound': case 'play': return _S;
     }
     return _S; // unknown → let async exec handle it
   }
@@ -748,8 +795,8 @@ class Basic {
   async exec(st) {
     switch (st.t) {
       case 'rem': return null;
-      case 'common': this.commonVars = new Set(st.vars.map((v) => this.varKey(v))); return null; // declares vars that survive CHAIN
-      case 'cls': this.s.cls(); return null;
+      case 'common': this.commonVars = new Set(st.vars.map((v) => this.varKey(v))); this.commonArrs = new Set((st.arrs || []).map((v) => this.varKey(v))); return null; // declares vars that survive CHAIN
+      case 'cls': if (this.gfx && this.gfx.active()) this.gfx.cls(); else this.s.cls(); return null;
       case 'beep': beep(); return null;
       case 'end': return { t: 'end' };
       case 'system': return { t: 'system' };
@@ -758,12 +805,12 @@ class Basic {
       case 'gosub': { const r = await this.run(this.go(st.line), true); return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain') ? r : null; }
       case 'chain': {
         const name = String(await this.evl(st.name));
-        const keep = {};                                     // CHAIN passes ONLY the COMMON vars;
-        for (const k of this.commonVars) if (k in this.vars) keep[k] = this.vars[k]; // the rest reset
-        this.vars = keep;
+        const keepV = {}; for (const k of this.commonVars) if (k in this.vars) keepV[k] = this.vars[k];   // CHAIN passes ONLY
+        const keepA = {}; for (const k of this.commonArrs) if (k in this.arrays) keepA[k] = this.arrays[k]; // the COMMON vars + arrays;
+        this.vars = keepV; this.arrays = keepA;                                                            // everything else resets
         return { t: 'chain', name };
       }
-      case 'color': this.s.color(num(await this.evl(st.args[0])), st.args[1] != null ? num(await this.evl(st.args[1])) : null); return null;
+      case 'color': { const fg = num(await this.evl(st.args[0])), bg = st.args[1] != null ? num(await this.evl(st.args[1])) : null; this.s.color(fg, bg); if (this.gfx && this.gfx.active()) this.gfx.color(fg, bg); return null; }
       case 'locate': this.s.locate(num(await this.evl(st.args[0])), st.args[1] != null ? num(await this.evl(st.args[1])) : null); return null;
       case 'assign': {
         const v = await this.evl(st.expr);
@@ -814,6 +861,48 @@ class Basic {
       }
       case 'close': return this.closeFile(st.fileno);
       case 'clear': { this.vars = {}; this.arrays = {}; await this.closeFile(null); return null; } // reset state; size args no-op
+      case 'sound': { const f = num(await this.evl(st.freq)), d = num(await this.evl(st.dur)); if (this.audio) await this.audio.sound(f, d); return null; }
+      case 'play': { const s = String(await this.evl(st.str)); if (this.audio) await this.audio.play(s); return null; }
+      case 'gscreen': { if (this.gfx) this.gfx.screen(num(await this.evl(st.mode))); return null; }
+      case 'pset': {
+        if (!this.gfx) return null;
+        let x = num(await this.evl(st.x)), y = num(await this.evl(st.y));
+        if (st.step) { x += this.gfx.lastX; y += this.gfx.lastY; }
+        const c = st.color != null ? num(await this.evl(st.color)) : null;
+        st.preset ? this.gfx.preset(x, y, c) : this.gfx.pset(x, y, c); return null;
+      }
+      case 'gline': {
+        if (!this.gfx) return null;
+        let x1, y1;
+        if (st.x1 != null) { x1 = num(await this.evl(st.x1)); y1 = num(await this.evl(st.y1)); if (st.step1) { x1 += this.gfx.lastX; y1 += this.gfx.lastY; } }
+        else { x1 = this.gfx.lastX; y1 = this.gfx.lastY; }
+        let x2 = num(await this.evl(st.x2)), y2 = num(await this.evl(st.y2)); if (st.step2) { x2 += x1; y2 += y1; }
+        const c = st.color != null ? num(await this.evl(st.color)) : null;
+        this.gfx.line(x1, y1, x2, y2, c, st.box); return null;
+      }
+      case 'circle': {
+        if (!this.gfx) return null;
+        const x = num(await this.evl(st.x)), y = num(await this.evl(st.y)), r = num(await this.evl(st.r));
+        const c = st.color != null ? num(await this.evl(st.color)) : null;
+        const start = st.start != null ? num(await this.evl(st.start)) : null;
+        const end = st.end != null ? num(await this.evl(st.end)) : null;
+        const aspect = st.aspect != null ? num(await this.evl(st.aspect)) : null;
+        this.gfx.circle(x, y, r, c, start, end, aspect); return null;
+      }
+      case 'paint': {
+        if (!this.gfx) return null;
+        const x = num(await this.evl(st.x)), y = num(await this.evl(st.y));
+        const c = st.color != null ? num(await this.evl(st.color)) : null;
+        const b = st.border != null ? num(await this.evl(st.border)) : null;
+        this.gfx.paint(x, y, c, b); return null;
+      }
+      case 'palette': { if (this.gfx) { if (st.attr == null) this.gfx.palette(); else this.gfx.palette(num(await this.evl(st.attr)), num(await this.evl(st.col))); } return null; }
+      case 'gwindow': { if (this.gfx) { if (st.x1 == null) this.gfx.setWindow(); else this.gfx.setWindow(num(await this.evl(st.x1)), num(await this.evl(st.y1)), num(await this.evl(st.x2)), num(await this.evl(st.y2))); } return null; }
+      case 'gview': { if (this.gfx) { if (st.x1 == null) this.gfx.setView(); else this.gfx.setView(num(await this.evl(st.x1)), num(await this.evl(st.y1)), num(await this.evl(st.x2)), num(await this.evl(st.y2))); } return null; }
+      case 'gget': { if (this.gfx) { const img = this.gfx.getImage(num(await this.evl(st.x1)), num(await this.evl(st.y1)), num(await this.evl(st.x2)), num(await this.evl(st.y2))); (this.gfxStore || (this.gfxStore = {}))[this.varKey(st.arr)] = img; } return null; }
+      case 'gput': { if (this.gfx) this.gfx.putImage(num(await this.evl(st.x)), num(await this.evl(st.y)), (this.gfxStore || {})[this.varKey(st.arr)]); return null; }
+      case 'draw': { if (this.gfx) this.gfx.draw(String(await this.evl(st.str))); return null; }
+      case 'viewprint': return null;   // text scroll window — accepted, no-op on a fixed full screen
       case 'onerror': this.onErrorLine = st.line; return null;
       case 'raiseerror': { const code = num(await this.evl(st.code)); const e = new Error('BASIC error ' + code); e.basCode = code; throw e; }
       case 'resume': return { t: 'resume', mode: st.mode, line: st.line };
@@ -1031,6 +1120,9 @@ class Basic {
       case 'EOF': { const f = this.files[num(a[0])]; return f && f.data ? (f.pos >= f.data.length ? -1 : 0) : -1; }
       case 'LOF': { const f = this.files[num(a[0])]; return f ? (f.data ? f.data.length : (f.out ? f.out.length : 0)) : 0; }
       case 'LOC': { const f = this.files[num(a[0])]; if (!f) return 0; return Math.floor((f.data ? f.pos : (f.out ? f.out.length : 0)) / 128); }
+      case 'POINT': return this.gfx ? this.gfx.point(num(a[0]), num(a[1])) : -1;     // pixel colour at (x,y)
+      case 'PMAP': return this.gfx ? this.gfx.pmap(num(a[0]), num(a[1])) : num(a[0]);  // logical↔physical map
+      case 'SCREEN': return this.gfx && this.gfx.scrn ? this.gfx.scrn(num(a[0]), num(a[1])) : 32; // read char/attr (text)
     }
     console.warn(`[bas] unsupported function ${name}() — returning 0`);
     return 0;

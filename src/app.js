@@ -14,6 +14,9 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
 
   const bas = new Basic(s, term, loadBas);
   bas.onPrintReady = (lines) => showPrintPreview(lines, 'Report');
+  const gfxEl = document.getElementById('gfx');
+  if (gfxEl) bas.gfx = new Graphics(gfxEl);     // SCREEN 1/2 graphics on the overlay canvas
+  bas.audio = new SoundEngine();                // SOUND / PLAY via Web Audio
 
   let prog = boot;
   try {
@@ -42,6 +45,7 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
   } finally {
     window._activeTerm = null;
     term.detach();
+    if (gfxEl) gfxEl.style.display = 'none';     // back to the text screen / menu
   }
 
   if (status) status('');

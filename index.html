@@ -73,10 +73,16 @@
               display: none; pointer-events: none; }
 
   .thaifont span { font-family: 'Consolas','Menlo','Monaco','Tahoma','Leelawadee UI','Courier New',monospace; }
+
+  /* ── graphics canvas (SCREEN 1/2) — overlays the text screen when a graphics mode is set ── */
+  #gfx { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+         display: none; image-rendering: pixelated; background: #000; z-index: 5;
+         width: 640px; height: 400px; }
 </style>
 </head>
 <body>
   <pre id="screen" class="thaifont"></pre>
+  <canvas id="gfx"></canvas>
   <div id="esc-hint">ESC — back to menu</div>
 
   <div id="gate">
@@ -123,6 +129,8 @@
 <script src="src/data/schema.js"></script>
 <script src="src/data/store.js"></script>
 <script src="src/term/beep.js"></script>
+<script src="src/audio/sound.js"></script>
+<script src="src/gfx/canvas.js"></script>
 <script src="src/term/screen.js"></script>
 <script src="src/term/printusing.js"></script>
 <script src="src/term/input.js"></script>

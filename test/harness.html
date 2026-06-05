@@ -48,28 +48,58 @@ class TestScreen {
 
 // ── minimal Terminal: feeds canned input lines/keys ──
 class TestTerm {
-  constructor(inputs=[]){ this.q=inputs.slice(); }
+  constructor(inputs){ this.q=(inputs||[]).slice(); }
   inkey(){ return ''; }
   async inputKey(){ return this.q.length ? String(this.q.shift())[0] : ' '; }
-  async inputLine(){ return this.q.length ? this.q.shift() : ''; }
+  // mirror the real terminal: numeric INPUT yields a number, not a string
+  async inputLine(opts){ const v = this.q.length ? this.q.shift() : ''; return (opts && (opts.type==='num'||opts.type==='int')) ? (parseFloat(v)||0) : v; }
 }
 
 // run one program, return { screen, printer, error }. `files` seeds the in-memory FS (name→string).
-async function runProgram(src, inputs=[], files=null){
+// `programs` (name→src) enables CHAIN: the run loop follows chain results like the real app.
+async function runProgram(src, inputs=[], files=null, programs=null){
   window.__fs = {};
   if (files) for (const k in files) window.__fs[k] = Uint8Array.from(String(files[k]), c=>c.charCodeAt(0)&0xff);
   const scr = new TestScreen();
   const term = new TestTerm(inputs);
-  const loader = (name) => null; // no CHAIN in unit tests
+  const loader = (name) => programs ? (programs[String(name).trim().toUpperCase()] ?? null) : null;
   const bas = new Basic(scr, term, loader);
+  // recording mocks for the device backends — verify the interpreter drives them correctly
+  // (real audio/canvas can't be checked headless; the sample/untestable/*.BAS are for that).
+  const rec = [];
+  const mock = (names) => { const o = {}; for (const n of names) o[n] = (...a)=>{ rec.push([n, ...a]); }; return o; };
+  bas.audio = mock(['sound','play']);
+  bas.gfx = mock(['cls','color','pset','preset','line','circle','paint','palette','setView','setWindow','getImage','putImage','draw']);
+  bas.gfx.lastX = 0; bas.gfx.lastY = 0; bas.gfx.mode = 0;
+  // pset/line track the "last point" like the real backend (so STEP-relative coords resolve)
+  bas.gfx.pset = (x,y,c)=>{ rec.push(['pset',x,y,c]); bas.gfx.lastX=x; bas.gfx.lastY=y; };
+  bas.gfx.preset = (x,y,c)=>{ rec.push(['preset',x,y,c]); bas.gfx.lastX=x; bas.gfx.lastY=y; };
+  bas.gfx.line = (x1,y1,x2,y2,c,b)=>{ rec.push(['line',x1,y1,x2,y2,c,b]); bas.gfx.lastX=x2; bas.gfx.lastY=y2; };
+  bas.gfx.screen = (m)=>{ bas.gfx.mode = m; rec.push(['screen', m]); };   // stateful: drives active()
+  bas.gfx.active = ()=> bas.gfx.mode !== 0;
+  bas.gfx.point = (x,y)=>{ rec.push(['point',x,y]); return 7; };
+  bas.gfx.pmap = (v,n)=>{ rec.push(['pmap',v,n]); return v; };
+  bas.gfx.scrn = (r,col)=>{ rec.push(['scrn',r,col]); return 65; };
+  bas.gfx.getImage = (...a)=>{ rec.push(['getImage',...a]); return {tag:'img'}; };
+  bas.gfx.putImage = (...a)=>{ rec.push(['putImage',...a]); };
   let error = null;
-  try { await bas.runText(src); } catch(e){ error = e.message || String(e); }
-  return { screen: scr.text(), printer: bas.printer.lines.map(l=>l.text).join('\n'), error, fs: window.__fs };
+  try {
+    let cur = src;
+    for (let guard=0; cur!=null && guard<20; guard++){
+      const res = await bas.runText(cur);
+      if (res && res.t === 'chain') cur = loader(res.name); else break;
+    }
+  } catch(e){ error = e.message || String(e); }
+  return { screen: scr.text(), printer: bas.printer.lines.map(l=>l.text).join('\n'), error, fs: window.__fs, calls: rec };
 }
+// helper: does the recorded backend-call list contain a call matching [name, ...args]?
+const called = (name, ...args) => (r) => r.error ? ('ERR:'+r.error)
+  : (r.calls.some(c => c[0]===name && args.every((a,i)=> a===undefined || c[i+1]===a)) ? true
+     : `no ${name}(${args.join(',')}) call — got ${JSON.stringify(r.calls)}`);
 
 // ── test registry ───────────────────────────────────────────────────────────
 const TESTS = [];
-function test(name, src, check, inputs, files){ TESTS.push({ name, src, check, inputs, files }); }
+function test(name, src, check, inputs, files, programs){ TESTS.push({ name, src, check, inputs, files, programs }); }
 // check(result) → true (pass) or string (fail reason). Helper: expect screen contains.
 const has = (sub) => (r) => r.error ? ('ERROR: '+r.error)
   : (r.screen.includes(sub) ? true : `screen lacks ${JSON.stringify(sub)} — got ${JSON.stringify(r.screen)}`);
@@ -94,6 +124,15 @@ test('reg: CVI/MKI roundtrip',   '10 OPEN "N.DAT" AS #1 LEN=2\n20 FIELD #1, 2 AS
 test('lset: left-justify',  '10 OPEN "J.DAT" AS #1 LEN=5\n20 FIELD #1, 5 AS A$\n30 LSET A$="AB"\n40 PRINT "["+A$+"]"\n50 CLOSE #1', has('[AB   ]'));
 test('rset: right-justify', '10 OPEN "J.DAT" AS #1 LEN=5\n20 FIELD #1, 5 AS A$\n30 RSET A$="AB"\n40 PRINT "["+A$+"]"\n50 CLOSE #1', has('[   AB]'));
 test('rset: overlong trunc','10 OPEN "J.DAT" AS #1 LEN=3\n20 FIELD #1, 3 AS A$\n30 RSET A$="ABCDE"\n40 PRINT "["+A$+"]"\n50 CLOSE #1', has('[ABC]'));
+test('common: scalar passes',
+  '10 COMMON X\n20 X=42\n30 CHAIN "B"', has('GOT 42'), null, null,
+  { B: '10 COMMON X\n20 PRINT "GOT";X' });
+test('common: array passes',
+  '10 COMMON A()\n20 DIM A(3)\n30 A(2)=99\n40 CHAIN "B"', has('ARR 99'), null, null,
+  { B: '10 COMMON A()\n20 PRINT "ARR";A(2)' });
+test('common: non-common resets',
+  '10 COMMON X\n20 X=1\n30 Y=7\n40 CHAIN "B"', has('Y= 0'), null, null,
+  { B: '10 COMMON X\n20 PRINT "Y=";Y' });
 
 // ════════════════════════════════════════════════════════════════════════════
 // PHASE 0 — new features. Tests added one keyword at a time as they're built.
@@ -188,13 +227,39 @@ test('seq: LOF',
   '10 OPEN "F.DAT" FOR OUTPUT AS #1\n20 PRINT #1,"ABCDE";\n30 CLOSE #1\n40 OPEN "F.DAT" FOR INPUT AS #1\n50 PRINT LOF(1)\n60 CLOSE #1',
   has('5'));
 
+// ── device-layer (verified via recording mocks; real output checked by sample/untestable/*.BAS) ──
+test('snd: SOUND args',   '10 SOUND 440,9', called('sound', 440, 9));
+test('snd: PLAY string',  '10 PLAY "CDE"',  called('play', 'CDE'));
+test('gfx: SCREEN',       '10 SCREEN 1', called('screen', 1));
+test('gfx: PSET',         '10 SCREEN 1\n20 PSET (10,20),3', called('pset', 10, 20, 3));
+test('gfx: PRESET',       '10 SCREEN 1\n20 PRESET (5,5)', called('preset', 5, 5));
+test('gfx: LINE',         '10 SCREEN 2\n20 LINE (0,0)-(100,50),1', called('line', 0, 0, 100, 50, 1, ''));
+test('gfx: LINE box BF',  '10 SCREEN 1\n20 LINE (1,2)-(3,4),2,BF', called('line', 1, 2, 3, 4, 2, 'BF'));
+test('gfx: CIRCLE',       '10 SCREEN 1\n20 CIRCLE (160,100),50,2', called('circle', 160, 100, 50, 2));
+test('gfx: PAINT',        '10 SCREEN 1\n20 PAINT (160,100),2,1', called('paint', 160, 100, 2, 1));
+test('gfx: PALETTE',      '10 SCREEN 1\n20 PALETTE 1,9', called('palette', 1, 9));
+test('gfx: WINDOW',       '10 SCREEN 2\n20 WINDOW (0,0)-(1,1)', called('setWindow', 0, 0, 1, 1));
+test('gfx: VIEW',         '10 SCREEN 1\n20 VIEW (10,10)-(100,100)', called('setView', 10, 10, 100, 100));
+test('gfx: CLS routes',   '10 SCREEN 1\n20 CLS', called('cls'));
+test('gfx: COLOR routes', '10 SCREEN 1\n20 COLOR 14,1', called('color', 14, 1));
+test('gfx: POINT fn',     '10 SCREEN 1\n20 IF POINT(5,5)=7 THEN PRINT "PT OK"', has('PT OK'));
+test('gfx: STEP relative','10 SCREEN 1\n20 PSET (50,50)\n30 PSET STEP(10,10),3', called('pset', 60, 60, 3));
+test('gfx: GET/PUT',      '10 SCREEN 1\n20 GET (0,0)-(9,9),A\n30 PUT (20,20),A', called('putImage', 20, 20));
+test('gfx: DRAW',         '10 SCREEN 1\n20 DRAW "U10 R10 D10 L10"', called('draw', 'U10 R10 D10 L10'));
+// sample/untestable/*.BAS bodies — confirm they parse + run end-to-end (mock backends, canned keys)
+const noerr = (r)=> r.error ? ('ERR:'+r.error) : true;
+test('sample: PSET.BAS', '10 SCREEN 1:CLS\n30 FOR I=0 TO 319\n40 Y=100+80*SIN(I/18)\n50 PSET (I,Y),(I/20) MOD 4\n60 NEXT\n80 PSET (0,5)\n90 FOR I=1 TO 30\n100 PSET STEP(10,0),2\n110 NEXT\n120 A$=INPUT$(1)\n130 CHAIN "LIST"', noerr, [' ']);
+test('sample: WINDOW.BAS','10 SCREEN 2:CLS\n30 WINDOW (-1.2,-1.2)-(1.2,1.2)\n50 LINE (-1.2,0)-(1.2,0),1\n80 FOR A=0 TO 6.3 STEP .02\n90 PSET (SIN(A),COS(A)),1\n100 NEXT\n160 A$=INPUT$(1)\n170 CHAIN "LIST"', called('setWindow'), [' ']);
+test('sample: GETPUT.BAS','10 SCREEN 1:CLS\n30 CIRCLE (30,30),18,2\n40 PAINT (30,30),2,2\n60 GET (10,10)-(50,50),S\n70 FOR I=0 TO 270 STEP 45\n80 PUT (I,90),S\n100 NEXT\n110 A$=INPUT$(1)\n120 CHAIN "LIST"', called('putImage'), [' ']);
+test('sample: LIST.BAS menu','10 SCREEN 0:CLS\n160 INPUT "Pick";N\n170 IF N=0 THEN CLS:END\n180 IF N=1 THEN CHAIN "PSET"\n290 GOTO 10', noerr, ['0']);
+
 // ── runner ───────────────────────────────────────────────────────────────────
 (async () => {
   const out = [];
   let pass=0, fail=0;
   for (const t of TESTS){
     let res;
-    try { res = await runProgram(t.src, t.inputs, t.files); }
+    try { res = await runProgram(t.src, t.inputs, t.files, t.programs); }
     catch(e){ res = { error: 'HARNESS: '+(e.message||e) }; }
     const v = t.check(res);
     if (v === true){ pass++; out.push('PASS  '+t.name); }

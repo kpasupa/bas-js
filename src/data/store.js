@@ -20,6 +20,11 @@ async function idbSet(v) { const db = await idb(); return new Promise((res, rej)
 async function idbGet() { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction(IDB_STORE, 'readonly'); const q = t.objectStore(IDB_STORE).get(IDB_KEY); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
 async function idbDel() { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction(IDB_STORE, 'readwrite'); t.objectStore(IDB_STORE).delete(IDB_KEY); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
 async function idbGetKey(key) { const db = await idb(); return new Promise((res, rej) => { const q = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(key); q.onsuccess = () => res(q.result ?? null); q.onerror = () => rej(q.error); }); }
+async function idbSetKey(key, val) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction(IDB_STORE, 'readwrite'); t.objectStore(IDB_STORE).put(val, key); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+
+async function getProjects() { try { return (await idbGetKey('projects')) ?? []; } catch { return []; } }
+async function saveProjects(list) { await idbSetKey('projects', list); }
+async function setActiveProject(p) { await idbSetKey('active', p); }
 
 let dirHandle = null;
 

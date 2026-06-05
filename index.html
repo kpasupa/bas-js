@@ -5,10 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>bas-js</title>
 <style>
+  * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body { display: flex; flex-direction: column; align-items: center; justify-content: center;
          font-family: system-ui, sans-serif; color: #ccc; }
-  /* 80×25 terminal */
+
+  /* ── terminal ── */
   #screen {
     font-family: 'Consolas','Menlo','Monaco','DejaVu Sans Mono','Courier New',monospace;
     font-size: 18px; line-height: 1.15; letter-spacing: 0;
@@ -19,28 +21,78 @@
   #screen span { display: inline; }
   .blink { animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
-  /* connect overlay — shown only until a folder is connected */
-  #gate { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px;
-          align-items: center; justify-content: center; background: #000; }
-  #gate h1 { color: #4ade80; font-size: 20px; margin: 0; letter-spacing: 2px; }
-  #gate p { color: #888; font-size: 13px; max-width: 460px; text-align: center; line-height: 1.5; }
-  #connect { font: inherit; font-size: 15px; padding: 10px 22px; border: 1px solid #4ade80;
-             background: #0b0; color: #000; font-weight: 700; border-radius: 6px; cursor: pointer; }
-  #connect:hover { opacity: .9; }
-  #status { color: #fbbf24; font-size: 12px; min-height: 16px; }
+
+  /* ── gate overlay ── */
+  #gate { position: fixed; inset: 0; background: #000; overflow-y: auto;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; gap: 0; }
+  #gate h1 { color: #4ade80; font-size: 18px; letter-spacing: 2px; margin: 0 0 20px; }
+
+  /* project list */
+  #proj-list { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 520px; }
+  .proj { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px;
+          padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+  .proj.live { border-color: #166534; }
+  .proj-info { flex: 1; min-width: 0; }
+  .proj-name { font-size: 14px; font-weight: 600; color: #eee; }
+  .proj-boot { font-size: 11px; color: #555; font-family: Consolas, monospace; margin-top: 1px; }
+  .proj-st   { font-size: 11px; margin-top: 2px; color: #555; }
+  .proj-st.ok  { color: #4ade80; }
+  .proj-st.err { color: #f87171; }
+
+  .btn { font: inherit; font-size: 13px; padding: 6px 13px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
+  .btn-run    { border: 1px solid #4ade80; background: #0b0; color: #000; font-weight: 700; }
+  .btn-run:hover { opacity: .85; }
+  .btn-ghost  { border: 1px solid #333; background: transparent; color: #666; }
+  .btn-ghost:hover { border-color: #777; color: #ccc; }
+  .btn-danger { border: 1px solid #7f1d1d; background: transparent; color: #f87171; }
+  .btn-danger:hover { background: #7f1d1d22; }
+
+  /* add form */
+  #add-form { display: none; width: 100%; max-width: 520px; background: #1a1a1a;
+              border: 1px solid #2a2a2a; border-radius: 8px; padding: 14px; margin-top: 8px; }
+  #add-form label { font-size: 11px; color: #777; display: block; margin-bottom: 3px; }
+  #add-form .picked { font-family: Consolas, monospace; font-size: 12px; color: #4ade80;
+                      background: #0a0a0a; border: 1px solid #222; border-radius: 4px;
+                      padding: 5px 8px; margin-bottom: 10px; }
+  #add-form input { width: 100%; background: #0a0a0a; border: 1px solid #333; color: #eee;
+                    font: inherit; font-size: 13px; padding: 6px 9px; border-radius: 4px;
+                    margin-bottom: 10px; outline: none; }
+  #add-form input:focus { border-color: #4ade80; }
+  .form-row { display: flex; gap: 8px; }
+
+  /* add button + status */
+  #btn-add-wrap { width: 100%; max-width: 520px; margin-top: 10px; }
+  #btn-add { font: inherit; font-size: 13px; padding: 8px 16px; border: 1px solid #333;
+             background: transparent; color: #4ade80; border-radius: 6px; cursor: pointer; }
+  #btn-add:hover { border-color: #4ade80; }
+  #gate-status { font-size: 12px; color: #fbbf24; min-height: 16px; margin-top: 8px; }
+
+  /* esc hint shown while running */
+  #esc-hint { position: fixed; bottom: 8px; right: 12px; font-size: 11px; color: #333;
+              display: none; pointer-events: none; }
+
   .thaifont span { font-family: 'Consolas','Menlo','Monaco','Tahoma','Leelawadee UI','Courier New',monospace; }
 </style>
 </head>
 <body>
   <pre id="screen" class="thaifont"></pre>
+  <div id="esc-hint">ESC — back to menu</div>
 
   <div id="gate">
     <h1>bas-js</h1>
-    <p>Run the GW-BASIC system from the data folder.<br>
-       Click below and choose the folder that holds <b>CUSTOMER</b>, <b>CHQ.DAT</b> and the <b>.BAS</b> files.
-       Granted once, it reconnects automatically next time.</p>
-    <button id="connect">📂 Connect data folder</button>
-    <div id="status"></div>
+    <div id="proj-list"></div>
+    <div id="btn-add-wrap"><button id="btn-add">＋ Add folder</button></div>
+    <div id="add-form">
+      <label>Folder</label>
+      <div class="picked" id="form-folder">—</div>
+      <label>Boot file</label>
+      <input id="form-boot" type="text" value="PASSWORD" spellcheck="false">
+      <div class="form-row">
+        <button class="btn btn-run" id="form-save">Save</button>
+        <button class="btn btn-ghost" id="form-cancel">Cancel</button>
+      </div>
+    </div>
+    <div id="gate-status"></div>
   </div>
 
 <script>
@@ -48,49 +100,175 @@
   const BASE_WIDTH  = Math.round(_scr.getBoundingClientRect().width);
   const _titleBar   = window.outerHeight * (window.innerWidth / window.outerWidth) - window.innerHeight;
   const BASE_HEIGHT = Math.ceil(_scr.getBoundingClientRect().height + _titleBar);
-
-  // Baseline ratio at load: 1 on Windows (logic unchanged), 2 on a Retina Mac. Zoom is
-  // measured relative to it, so HiDPI scaling is ignored while browser zoom still counts.
-  const BASE_DPR = window.devicePixelRatio || 1;
+  const BASE_DPR    = window.devicePixelRatio || 1;
   function getZoom() { return (window.devicePixelRatio || 1) / BASE_DPR; }
-
-  function fixSize() {
-    const zoom = getZoom();
-    window.resizeTo(Math.round(BASE_WIDTH * zoom), Math.round(BASE_HEIGHT * zoom));
-  }
-
+  function fixSize() { const z = getZoom(); window.resizeTo(Math.round(BASE_WIDTH * z), Math.round(BASE_HEIGHT * z)); }
   fixSize();
   window.addEventListener('resize', fixSize);
 </script>
 
-<script src=”src/codec/bytes.js”></script>
-<script src=”src/codec/date.js”></script>
-<script src=”src/codec/ku42.js”></script>
-<script src=”src/codec/mbf.js”></script>
-<script src=”src/data/addressing.js”></script>
-<script src=”src/data/schema.js”></script>
-<script src=”src/data/store.js”></script>
-<script src=”src/term/beep.js”></script>
-<script src=”src/term/screen.js”></script>
-<script src=”src/term/printusing.js”></script>
-<script src=”src/term/input.js”></script>
-<script src=”src/print/report.js”></script>
-<script src=”src/interp/basic.js”></script>
-<script src=”src/app.js”></script>
+<script src="src/codec/bytes.js"></script>
+<script src="src/codec/date.js"></script>
+<script src="src/codec/ku42.js"></script>
+<script src="src/codec/mbf.js"></script>
+<script src="src/data/addressing.js"></script>
+<script src="src/data/schema.js"></script>
+<script src="src/data/store.js"></script>
+<script src="src/term/beep.js"></script>
+<script src="src/term/screen.js"></script>
+<script src="src/term/printusing.js"></script>
+<script src="src/term/input.js"></script>
+<script src="src/print/report.js"></script>
+<script src="src/interp/basic.js"></script>
+<script src="src/app.js"></script>
 
 <script>
-  const originalTitle = document.title;
-  const el = document.getElementById('screen');
-  const gate = document.getElementById('gate');
-  const statusEl = document.getElementById('status');
-  const status = (t) => { statusEl.textContent = t; };
-  const hideGate = () => { gate.style.display = 'none'; el.focus(); document.title = originalTitle + ' - File granted'; };
+  const el       = document.getElementById('screen');
+  const gate     = document.getElementById('gate');
+  const escHint  = document.getElementById('esc-hint');
+  const gstEl    = document.getElementById('gate-status');
+  const gst      = (t, c) => { gstEl.textContent = t; gstEl.style.color = c || '#fbbf24'; };
 
-  connectAndRun(el, status, false, hideGate)
-    .then(async (ok) => { if (!ok) { status('click “Connect data folder” to start'); document.title = originalTitle + ((await hasHandle()) ? ' - Please reconnect' : ' - Please choose folder'); } });
+  // ── gate show/hide ────────────────────────────────────────────────────────
+  function showGate() {
+    gate.style.display = 'flex';
+    escHint.style.display = 'none';
+    document.title = 'bas-js';
+    renderProjects();
+  }
+  function hideGate() {
+    gate.style.display = 'none';
+    escHint.style.display = 'block';
+    el.focus();
+    document.title = 'bas-js - running';
+  }
 
-  document.getElementById('connect').onclick = () =>
-    connectAndRun(el, status, true, hideGate);
+  // ── ESC → back to gate ────────────────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && window._activeTerm) {
+      window._activeTerm.abort();
+    }
+  });
+
+  // ── project list ──────────────────────────────────────────────────────────
+  let projects = [];
+  let pendingHandle = null;
+
+  async function loadProjects() {
+    projects = await getProjects();
+  }
+
+  function renderProjects() {
+    const list = document.getElementById('proj-list');
+    list.innerHTML = '';
+    if (!projects.length) {
+      list.innerHTML = '<div style="color:#444;font-size:13px;margin-bottom:4px">No folders saved — add one below.</div>';
+      return;
+    }
+    projects.forEach((p, i) => {
+      const d = document.createElement('div');
+      d.className = 'proj';
+      d.innerHTML = `
+        <div class="proj-info">
+          <div class="proj-name">${gateEsc(p.name)}</div>
+          <div class="proj-boot">${gateEsc(p.boot)}.BAS</div>
+          <div class="proj-st" id="pst-${i}"></div>
+        </div>
+        <button class="btn btn-run  btn-connect" data-i="${i}">Run</button>
+        <button class="btn btn-ghost btn-edit"   data-i="${i}">Edit</button>
+        <button class="btn btn-danger btn-remove" data-i="${i}">✕</button>`;
+      list.appendChild(d);
+      p.handle.queryPermission({ mode: 'readwrite' }).then(perm => {
+        const st = document.getElementById(`pst-${i}`);
+        if (st) { st.textContent = perm === 'granted' ? 'ready' : 'needs re-grant'; st.className = 'proj-st' + (perm === 'granted' ? ' ok' : ''); }
+        if (perm === 'granted') d.classList.add('live');
+      });
+    });
+  }
+
+  function gateEsc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  // ── project list clicks ───────────────────────────────────────────────────
+  document.getElementById('proj-list').addEventListener('click', async e => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const i = +btn.dataset.i;
+    const p = projects[i];
+
+    if (btn.classList.contains('btn-connect')) {
+      gst('Connecting…');
+      try {
+        const perm = await p.handle.requestPermission({ mode: 'readwrite' });
+        if (perm !== 'granted') { gst('Permission denied.', '#f87171'); return; }
+        await setActiveProject({ handle: p.handle, boot: p.boot, name: p.name });
+        gst('');
+        hideGate();
+        await connectAndRun(el, gst, false, () => {});
+        showGate();
+      } catch(err) { gst('Error: ' + err.message, '#f87171'); }
+    }
+
+    if (btn.classList.contains('btn-edit')) {
+      const newBoot = prompt('Boot file (without .BAS):', p.boot);
+      if (newBoot?.trim()) {
+        projects[i].boot = newBoot.trim().toUpperCase();
+        await saveProjects(projects);
+        renderProjects();
+      }
+    }
+
+    if (btn.classList.contains('btn-remove')) {
+      if (confirm(`Remove "${p.name}"?`)) {
+        projects.splice(i, 1);
+        await saveProjects(projects);
+        renderProjects();
+      }
+    }
+  });
+
+  // ── add folder ────────────────────────────────────────────────────────────
+  document.getElementById('btn-add').onclick = async () => {
+    try {
+      pendingHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      document.getElementById('form-folder').textContent = pendingHandle.name;
+      document.getElementById('form-boot').value = 'PASSWORD';
+      document.getElementById('add-form').style.display = 'block';
+      document.getElementById('form-boot').focus();
+      document.getElementById('form-boot').select();
+    } catch(e) { if (e.name !== 'AbortError') gst('Error: ' + e.message, '#f87171'); }
+  };
+
+  document.getElementById('form-save').onclick = async () => {
+    if (!pendingHandle) return;
+    const boot = document.getElementById('form-boot').value.trim().toUpperCase() || 'PASSWORD';
+    const idx = projects.findIndex(p => p.name === pendingHandle.name);
+    const entry = { handle: pendingHandle, boot, name: pendingHandle.name };
+    if (idx >= 0) projects[idx] = entry; else projects.push(entry);
+    await saveProjects(projects);
+    pendingHandle = null;
+    document.getElementById('add-form').style.display = 'none';
+    renderProjects();
+    gst('Folder saved ✓', '#4ade80');
+  };
+
+  document.getElementById('form-cancel').onclick = () => {
+    pendingHandle = null;
+    document.getElementById('add-form').style.display = 'none';
+  };
+
+  // ── init ──────────────────────────────────────────────────────────────────
+  (async () => {
+    await loadProjects();
+    // Auto-run if active project still has live permission (warm start / redirect from picker)
+    const boot = await tryReconnectActive();
+    if (boot) {
+      hideGate();
+      await connectAndRun(el, gst, false, () => {});
+      showGate();
+    } else {
+      showGate();
+    }
+  })();
 </script>
 </body>
 </html>

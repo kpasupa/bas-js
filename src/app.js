@@ -10,26 +10,36 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
   const s = new Screen(el);
   const term = new Terminal(s);
   term.attach();
+  window._activeTerm = term;  // exposed so ESC handler in index.html can abort()
+
   const bas = new Basic(s, term, loadBas);
   bas.onPrintReady = (lines) => showPrintPreview(lines, 'Report');
 
-  let prog = boot;
-  while (prog) {
-    const src = await loadBas(prog);
-    if (src == null) { s.color(7, 0); s.locate(25, 1); s.put(`[ program "${prog}" not found in folder ]`); s.render(); break; }
-    const res = await bas.runText(src);
-    if (!bas.printer.isEmpty()) { showPrintPreview(bas.printer.lines, prog); bas.printer.reset(); }
-    if (res && res.t === 'chain') prog = res.name;
-    else if (res && res.t === 'system') { s.color(7, 0); s.locate(25, 1); s.put('[ exited — SYSTEM ]'); s.render(); break; }
-    else break;
+  try {
+    let prog = boot;
+    while (prog) {
+      const src = await loadBas(prog);
+      if (src == null) { s.color(7, 0); s.locate(25, 1); s.put(`[ program "${prog}" not found in folder ]`); s.render(); break; }
+      const res = await bas.runText(src);
+      if (!bas.printer.isEmpty()) { showPrintPreview(bas.printer.lines, prog); bas.printer.reset(); }
+      if (res && res.t === 'chain') prog = res.name;
+      else if (res && res.t === 'system') { s.color(7, 0); s.locate(25, 1); s.put('[ exited — SYSTEM ]'); s.render(); break; }
+      else break;
+    }
+  } catch (e) {
+    if (e.name !== 'EscapeError') throw e;
+    // ESC pressed — exit silently back to gate
+  } finally {
+    window._activeTerm = null;
+    term.detach();
   }
-  term.detach();
-  if (status) status('finished — reload to run again');
+
+  if (status) status('');
 }
 
 async function connectAndRun(el, status, fromGesture, onConnected) {
   try {
-    // Try active project from picker.html first (permission already granted there)
+    // Try active project from picker (permission already granted there)
     let boot = await tryReconnectActive();
     let ok = !!boot;
 
@@ -37,7 +47,7 @@ async function connectAndRun(el, status, fromGesture, onConnected) {
     if (!ok) { ok = await tryReconnect('readwrite'); boot = DEFAULT_BOOT; }
     if (!ok && fromGesture) ok = await regrant('readwrite');
     if (!ok && fromGesture) ok = !!(await pickFolder('readwrite'));
-    if (!ok) { status && status(fromGesture ? 'permission denied' : 'click "Connect data folder"'); return false; }
+    if (!ok) { status && status(fromGesture ? 'permission denied' : ''); return false; }
 
     status && status(`connected: ${folderName()}`);
     if (onConnected) onConnected();

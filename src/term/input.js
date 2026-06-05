@@ -1,6 +1,9 @@
 ﻿// Keyboard + input primitives over a Screen: INPUT (line, typed), INPUT$(1) (one key),
 // INKEY$ (non-blocking poll). One Terminal owns the keydown listener for a screen.
 
+// Sentinel value injected by abort() — never a real keypress.
+const _ESC_SENTINEL = Symbol('esc');
+
 class Terminal {
   constructor(screen) {
     this.screen = screen;
@@ -34,6 +37,13 @@ class Terminal {
   inkey() { return this._buf.length ? this._buf.shift() : ''; } // INKEY$
   async inputKey() { return this.nextKey(); }                   // INPUT$(1)
 
+  // Interrupt any pending nextKey() waiter and future reads with an escape signal.
+  abort() {
+    while (this._waiters.length) this._waiters.shift()(_ESC_SENTINEL);
+    this._buf = [_ESC_SENTINEL];
+    this._aborted = true;
+  }
+
   // INPUT a line. type: 'str' | 'int' | 'num'. question:true prepends "? " (bare INPUT / ';' form).
   async inputLine({ type = 'str', question = false } = {}) {
     const s = this.screen;
@@ -42,8 +52,9 @@ class Terminal {
     let buf = '';
     for (;;) {
       const ch = await this.nextKey();
+      if (ch === _ESC_SENTINEL) { s.setCursorVisible(false); throw Object.assign(new Error('ESC'), { name: 'EscapeError' }); }
       if (ch === '\r') break;
-      if (ch === '\x1b') continue; // ESC ignored inside a line here
+      if (ch === '\x1b') continue; // ESC key from keyboard (ignored in line input)
       if (ch === '\b') {
         if (buf.length) { buf = buf.slice(0, -1); s.col -= 1; s.put(' '); s.col -= 1; s.render(); }
         continue;

@@ -62,6 +62,21 @@ export async function regrant(mode = 'readwrite') {
 
 export async function forget() { dirHandle = null; await idbDel(); }
 
+// Scan all .BAS files in the connected folder; return true if any contain a PUT command.
+// Requires at least read permission to be already granted on dirHandle.
+export async function needsWrite(handle = dirHandle) {
+  if (!handle) return false;
+  for await (const [name, fh] of handle.entries()) {
+    if (fh.kind !== 'file' || !name.toUpperCase().endsWith('.BAS')) continue;
+    const text = await (await fh.getFile()).text();
+    if (/^\s*\d+\s+PUT\s+#/im.test(text)) return true;
+  }
+  return false;
+}
+
+// Return the saved handle from IDB without setting dirHandle (no side effects).
+export async function savedHandle() { try { return await idbGet(); } catch { return null; } }
+
 function requireDir() {
   if (!dirHandle) throw new Error('No data folder connected — call pickFolder()/tryReconnect() first.');
   return dirHandle;

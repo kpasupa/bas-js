@@ -23,10 +23,15 @@
   #gate { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px;
           align-items: center; justify-content: center; background: #000; }
   #gate h1 { color: #4ade80; font-size: 20px; margin: 0; letter-spacing: 2px; }
-  #gate p { color: #888; font-size: 13px; max-width: 460px; text-align: center; line-height: 1.5; }
-  #connect { font: inherit; font-size: 15px; padding: 10px 22px; border: 1px solid #4ade80;
-             background: #0b0; color: #000; font-weight: 700; border-radius: 6px; cursor: pointer; }
-  #connect:hover { opacity: .9; }
+  #gate p { color: #888; font-size: 13px; max-width: 460px; text-align: center; line-height: 1.6; margin: 0; }
+  #gate b { color: #ccc; }
+  .gate-btns { display: flex; gap: 12px; }
+  .btn-primary { font: inherit; font-size: 15px; padding: 10px 22px; border: 1px solid #4ade80;
+                 background: #0b0; color: #000; font-weight: 700; border-radius: 6px; cursor: pointer; }
+  .btn-primary:hover { opacity: .9; }
+  .btn-secondary { font: inherit; font-size: 15px; padding: 10px 22px; border: 1px solid #444;
+                   background: transparent; color: #666; border-radius: 6px; cursor: pointer; }
+  .btn-secondary:hover { border-color: #888; color: #ccc; }
   #status { color: #fbbf24; font-size: 12px; min-height: 16px; }
   .thaifont span { font-family: 'Consolas','Menlo','Monaco','Tahoma','Leelawadee UI','Courier New',monospace; }
 </style>
@@ -36,10 +41,23 @@
 
   <div id="gate">
     <h1>bas-js</h1>
-    <p>Run the GW-BASIC system from the data folder.<br>
-       Click below and choose the folder that holds <b>CUSTOMER</b>, <b>CHQ.DAT</b> and the <b>.BAS</b> files.
-       Granted once, it reconnects automatically next time.</p>
-    <button id="connect">📂 Connect data folder</button>
+
+    <!-- shown when a folder handle is saved in IDB but permission needs re-granting -->
+    <div id="gate-reconnect" style="display:none">
+      <p>This script requires readwrite access to folder <b id="folder-name"></b>.<br>
+         Change data folder?</p>
+      <div class="gate-btns">
+        <button id="btn-allow" class="btn-primary">Allow access</button>
+        <button id="btn-change" class="btn-secondary">Change folder</button>
+      </div>
+    </div>
+
+    <!-- shown when no folder has been chosen yet -->
+    <div id="gate-first" style="display:none">
+      <p>Choose the folder containing your <b>.BAS</b> files and data.</p>
+      <button id="btn-pick" class="btn-primary">📂 Choose folder</button>
+    </div>
+
     <div id="status"></div>
   </div>
 
@@ -63,24 +81,36 @@
   window.addEventListener('resize', fixSize);
 </script>
 
-<script type="module">
+<script type=”module”>
   import { connectAndRun } from './src/app.js';
-  import { hasHandle } from './src/data/store.js';
+  import { savedHandle } from './src/data/store.js';
+
   const originalTitle = document.title;
-  const el = document.getElementById('screen');
+  const el  = document.getElementById('screen');
   const gate = document.getElementById('gate');
   const statusEl = document.getElementById('status');
-  const status = (t) => { statusEl.textContent = t; };
+  const status  = (t) => { statusEl.textContent = t; };
   const hideGate = () => { gate.style.display = 'none'; el.focus(); document.title = originalTitle + ' - File granted'; };
 
-  // On load: try to reconnect silently (no gesture). hideGate fires on connect, before the
-  // program loop runs (connectAndRun only resolves when the session ends).
-  connectAndRun(el, status, false, hideGate)
-    .then(async (ok) => { if (!ok) { status('click “Connect data folder” to start'); document.title = originalTitle + ((await hasHandle()) ? ' - Please reconnect' : ' - Please choose folder'); } });
+  // On load: try silent reconnect (succeeds if browser session still has permission).
+  connectAndRun(el, status, false, hideGate).then(async (ok) => {
+    if (ok) return;
 
-  document.getElementById('connect').onclick = () =>
-    connectAndRun(el, status, true, hideGate);          // user gesture → folder picker allowed
-
+    const h = await savedHandle();
+    if (h) {
+      // Known folder — ask user to re-grant or change
+      document.getElementById('folder-name').textContent = `”${h.name}”`;
+      document.getElementById('gate-reconnect').style.display = '';
+      document.getElementById('btn-allow').onclick  = () => connectAndRun(el, status, true, hideGate);
+      document.getElementById('btn-change').onclick = () => connectAndRun(el, status, true, hideGate, { forcePick: true });
+      document.title = originalTitle + ' - Please reconnect';
+    } else {
+      // First run — no handle saved yet
+      document.getElementById('gate-first').style.display = '';
+      document.getElementById('btn-pick').onclick = () => connectAndRun(el, status, true, hideGate);
+      document.title = originalTitle + ' - Please choose folder';
+    }
+  });
 </script>
 </body>
 </html>

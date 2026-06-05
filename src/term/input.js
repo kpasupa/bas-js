@@ -1,7 +1,7 @@
-// Keyboard + input primitives over a Screen: INPUT (line, typed), INPUT$(1) (one key),
+﻿// Keyboard + input primitives over a Screen: INPUT (line, typed), INPUT$(1) (one key),
 // INKEY$ (non-blocking poll). One Terminal owns the keydown listener for a screen.
 
-export class Terminal {
+class Terminal {
   constructor(screen) {
     this.screen = screen;
     this._buf = [];        // keys waiting to be consumed (INKEY$ / INPUT$)

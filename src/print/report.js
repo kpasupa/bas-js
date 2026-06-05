@@ -1,4 +1,4 @@
-// Virtual printer + report renderer — universal, driven only by the report's own output.
+﻿// Virtual printer + report renderer — universal, driven only by the report's own output.
 //
 // LPRINT output is captured (instead of going to the screen) as fixed-width text lines, then
 // classified by content markers and turned into an HTML table for the browser's native print.
@@ -22,12 +22,11 @@
 //     columns): slice the flat text at the ruler's bar columns to recover each cell.
 // KU42 bytes are decoded to Thai for display.
 
-import { KU42_TO_UTF8 } from '../codec/ku42.js';
 
 // Captures each LPRINT physical line as both a flat fixed-width string (for classification)
 // and an ordered list of segments {col, text} (one per TAB-positioned field) so data cells
 // map to columns by ORDER — robust even when the original's | ruler and data TABs don't align.
-export class ReportPrinter {
+class ReportPrinter {
   constructor() { this.reset(); }
   reset() { this.lines = []; this._buf = ''; this._segs = []; this._curCol = 1; this._cur = ''; this._esc = 0; this._dirty = false; }
   isEmpty() { return this.lines.length === 0 && !this._dirty; }
@@ -79,7 +78,7 @@ const esc = (s) => s.replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>':
 // under its header — and it works even when a report concatenates several fields into one
 // LPRINT (e.g. CHQ09 prints date+cheqno+duedate+bank as a single string), because the
 // characters still land in the right columns.
-export function buildModel(lines) {
+function buildModel(lines) {
   const rulerIdx = lines.findIndex((l) => l.text.includes('|'));
   if (rulerIdx < 0) return { title: lines.map((l) => l.text), columns: [], body: [], foot: [], hasRuler: false };
 
@@ -160,7 +159,7 @@ function fixSpill(cells) {
   return cells;
 }
 
-export function renderReportHTML(lines) {
+function renderReportHTML(lines) {
   // An HTML table for any report that has a '|' column ruler (position-based slicing handles
   // aligned AND concatenated-field reports). A report with no ruler at all falls back to
   // faithful monospace <pre> (the print dialog still gives Scale + page numbers + Save-PDF).
@@ -199,7 +198,7 @@ const REPORT_CSS = `
 
 // Render the captured lines into a hidden iframe and invoke the browser's native print
 // preview (no popup blocker, unlike window.open). The user gets Scale + page numbers + PDF.
-export function showPrintPreview(lines, title = 'Report') {
+function showPrintPreview(lines, title = 'Report') {
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${REPORT_CSS}</style></head><body>${renderReportHTML(lines)}</body></html>`;
   let frame = document.getElementById('__report_frame');
   if (frame) frame.remove();

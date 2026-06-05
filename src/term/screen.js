@@ -1,13 +1,13 @@
-// 80×25 text screen emulating the GW-BASIC console: LOCATE/COLOR/CLS/PRINT primitives
+﻿// 80×25 text screen emulating the GW-BASIC console: LOCATE/COLOR/CLS/PRINT primitives
 // over a character+color cell buffer, rendered to a DOM element as colored spans.
 
 // CGA/EGA 16-color palette (indices 0–15). COLOR fg,bg uses these; fg 16–31 = blink.
-export const CGA = [
+const CGA = [
   '#000000', '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', '#aaaaaa',
   '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff',
 ];
 
-export class Screen {
+class Screen {
   constructor(el, rows = 25, cols = 80) {
     this.el = el;
     this.rows = rows;
@@ -103,7 +103,7 @@ export class Screen {
 }
 
 // GW-BASIC string helpers.
-export const STRING$ = (n, ch) => (typeof ch === 'number' ? String.fromCharCode(ch) : ch[0]).repeat(n);
-export const SPACE$ = (n) => ' '.repeat(n);
+const STRING$ = (n, ch) => (typeof ch === 'number' ? String.fromCharCode(ch) : ch[0]).repeat(n);
+const SPACE$ = (n) => ' '.repeat(n);
 // STR$: leading space for non-negative numbers, as GW-BASIC does.
-export const STR$ = (n) => (n >= 0 ? ' ' + n : String(n));
+const STR$ = (n) => (n >= 0 ? ' ' + n : String(n));

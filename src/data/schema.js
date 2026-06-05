@@ -1,15 +1,10 @@
-// Record schemas + parse/patch for CUSTOMER (50B) and CHQ.DAT (58B).
+﻿// Record schemas + parse/patch for CUSTOMER (50B) and CHQ.DAT (58B).
 //
 // patch*() implements the preserve-unchanged-bytes rule: it clones the ORIGINAL record
 // bytes and overwrites only the fields present in the patch. Untouched fields (notably
 // AMT, whose low mantissa bits can't survive a JS Number round-trip) keep their exact
 // original bytes — so editing one field never perturbs the others.
 
-import { readInt16LE, writeInt16LE } from '../codec/bytes.js';
-import { mbfSingleToFloat, floatToMbfSingle, mbfDoubleToFloat, encodeMbfDoubleDecimal } from '../codec/mbf.js';
-import { decodeKU42, encodeKU42 } from '../codec/ku42.js';
-import { unpackDMY, packDMY, formatDMY } from '../codec/date.js';
-import { CUSTOMER_SIZE, CHQ_SIZE } from './addressing.js';
 
 const ascii = (bytes) => String.fromCharCode(...bytes).replace(/\0/g, ' ').trimEnd();
 const putAscii = (rec, off, len, str) => {
@@ -20,7 +15,7 @@ const putBytes = (rec, off, bytes) => rec.set(bytes, off);
 // ─── CHQ.DAT (58 bytes) ──────────────────────────────────────────────────────
 // ID@0(i16) KDAY@2(mbf single date) CHNO@6(8 ascii) DES@14(30 ku42)
 // DUE@44(mbf single date) AMT@48(mbf double) FLG@56(2 ascii)
-export function parseChq(rec) {
+function parseChq(rec) {
   const kdayDmy = Math.round(mbfSingleToFloat(rec.subarray(2, 6)));
   const dueDmy = Math.round(mbfSingleToFloat(rec.subarray(44, 48)));
   return {
@@ -37,7 +32,7 @@ export function parseChq(rec) {
 
 // patch keys: id (int) | kday/due ({dd,mm,yy} or packed int) | chno (str) | des (str)
 //             | amt (decimal string — preferred — or number) | flg (str)
-export function patchChq(original, patch) {
+function patchChq(original, patch) {
   const rec = original.slice(0, CHQ_SIZE);
   if ('id' in patch) putBytes(rec, 0, writeInt16LE(patch.id));
   if ('kday' in patch) putBytes(rec, 2, floatToMbfSingle(toDMY(patch.kday)));
@@ -50,7 +45,7 @@ export function patchChq(original, patch) {
 }
 
 // Build a fresh CHQ record from scratch (new cheque entry — CHQ02).
-export function buildChq({ id, kday, chno, des, due, amt, flg = 'AA' }) {
+function buildChq({ id, kday, chno, des, due, amt, flg = 'AA' }) {
   return patchChq(new Uint8Array(CHQ_SIZE), { id, kday, chno, des, due, amt, flg });
 }
 
@@ -58,7 +53,7 @@ const toDMY = (v) => (typeof v === 'object' ? packDMY(v.dd, v.mm, v.yy) : v);
 
 // ─── CUSTOMER (50 bytes) ─────────────────────────────────────────────────────
 // NO@0(i16) NM@2(40 ku42) FG@42(2 ascii) SQ@44(i16) RS@46(4 reserved)
-export function parseCustomer(rec) {
+function parseCustomer(rec) {
   return {
     no: readInt16LE(rec, 0),
     name: decodeKU42(rec.subarray(2, 42)),
@@ -69,7 +64,7 @@ export function parseCustomer(rec) {
 }
 
 // patch keys: no (int) | name (str) | flag (str) | seq (int)
-export function patchCustomer(original, patch) {
+function patchCustomer(original, patch) {
   const rec = original.slice(0, CUSTOMER_SIZE);
   if ('no' in patch) putBytes(rec, 0, writeInt16LE(patch.no));
   if ('name' in patch) putBytes(rec, 2, encodeKU42(patch.name, 40));

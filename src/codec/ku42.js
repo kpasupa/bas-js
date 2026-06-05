@@ -27,12 +27,10 @@ for (const [byte, char] of Object.entries(KU42_TO_UTF8)) {
   UTF8_TO_KU42[char] = parseInt(byte, 10);
 }
 
-export { KU42_TO_UTF8, UTF8_TO_KU42 };
-
 // Decode KU42 bytes → UTF-8 string. 0x00/0x20/0xA0 → space (0xA0 is used in real
 // CUSTOMER names as an inter-token space); <0x80 → ASCII.
 // Unknown high bytes render as [xx] so corruption is visible, not silent.
-export function decodeKU42(bytes) {
+function decodeKU42(bytes) {
   let result = '';
   for (const b of bytes) {
     if (b === 0x00 || b === 0x20 || b === 0xa0) { result += ' '; continue; }
@@ -44,7 +42,7 @@ export function decodeKU42(bytes) {
 
 // Encode a UTF-8 string → fixed-length KU42 byte field, space-padded (0x20).
 // Iterates Unicode code points so Thai chars map correctly. Unknown → '?'.
-export function encodeKU42(str, len = 40) {
+function encodeKU42(str, len = 40) {
   const out = new Uint8Array(len).fill(0x20);
   let pos = 0;
   for (const char of str) {

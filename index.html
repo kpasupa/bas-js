@@ -63,9 +63,22 @@
   window.addEventListener('resize', fixSize);
 </script>
 
-<script type="module">
-  import { connectAndRun } from './src/app.js';
-  import { hasHandle } from './src/data/store.js';
+<script src=”src/codec/bytes.js”></script>
+<script src=”src/codec/date.js”></script>
+<script src=”src/codec/ku42.js”></script>
+<script src=”src/codec/mbf.js”></script>
+<script src=”src/data/addressing.js”></script>
+<script src=”src/data/schema.js”></script>
+<script src=”src/data/store.js”></script>
+<script src=”src/term/beep.js”></script>
+<script src=”src/term/screen.js”></script>
+<script src=”src/term/printusing.js”></script>
+<script src=”src/term/input.js”></script>
+<script src=”src/print/report.js”></script>
+<script src=”src/interp/basic.js”></script>
+<script src=”src/app.js”></script>
+
+<script>
   const originalTitle = document.title;
   const el = document.getElementById('screen');
   const gate = document.getElementById('gate');
@@ -73,14 +86,11 @@
   const status = (t) => { statusEl.textContent = t; };
   const hideGate = () => { gate.style.display = 'none'; el.focus(); document.title = originalTitle + ' - File granted'; };
 
-  // On load: try to reconnect silently (no gesture). hideGate fires on connect, before the
-  // program loop runs (connectAndRun only resolves when the session ends).
   connectAndRun(el, status, false, hideGate)
     .then(async (ok) => { if (!ok) { status('click “Connect data folder” to start'); document.title = originalTitle + ((await hasHandle()) ? ' - Please reconnect' : ' - Please choose folder'); } });
 
   document.getElementById('connect').onclick = () =>
-    connectAndRun(el, status, true, hideGate);          // user gesture → folder picker allowed
-
+    connectAndRun(el, status, true, hideGate);
 </script>
 </body>
 </html>

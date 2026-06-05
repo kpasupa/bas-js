@@ -1,11 +1,11 @@
-// PRINT USING — numeric masks like "##,###,###.##", "####", "#####", "###".
+﻿// PRINT USING — numeric masks like "##,###,###.##", "####", "#####", "###".
 // Covers the masks the CHQ screens use. (To be validated against those screens when ported.)
 //
 // Rules approximated from GW-BASIC: '#' = digit slot; integer part is right-justified and
 // space-padded to the number of '#'s; ',' groups thousands; '.' fixes the fraction width.
 // If the value overflows the integer slots, GW-BASIC prefixes '%' and prints the full number.
 
-export function printUsing(mask, value) {
+function printUsing(mask, value) {
   const hasComma = mask.includes(',');
   const clean = mask.replace(/,/g, '');
   const dot = clean.indexOf('.');
@@ -34,7 +34,7 @@ export function printUsing(mask, value) {
 // Multi-field PRINT USING: walk the mask, formatting one value per numeric field ('#'-run)
 // and emitting literals as-is. '_' escapes the next char as a literal. Used by the
 // interpreter for masks like "##_/##_/##";PDD;PMM;PYY -> "31/ 5/26".
-export function formatUsing(mask, values) {
+function formatUsing(mask, values) {
   let out = '', vi = 0, i = 0;
   while (i < mask.length) {
     const c = mask[i];

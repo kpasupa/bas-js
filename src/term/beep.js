@@ -1,6 +1,6 @@
-// BEEP — short 800 Hz tone via WebAudio, approximating the GW-BASIC console beep.
+﻿// BEEP — short 800 Hz tone via WebAudio, approximating the GW-BASIC console beep.
 let ctx = null;
-export function beep(ms = 150, freq = 800) {
+function beep(ms = 150, freq = 800) {
   try {
     ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();

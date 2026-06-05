@@ -1,4 +1,4 @@
-// Spike A — GW-BASIC interpreter, scoped to the screens cheque-js needs. Runs the original
+﻿// Spike A — GW-BASIC interpreter, scoped to the screens cheque-js needs. Runs the original
 // .BAS unmodified.
 //
 // Supports: line-numbered flow, GOTO/GOSUB/RETURN/ON..GOTO, IF/THEN/ELSE (inline stmts &
@@ -15,12 +15,6 @@
 // ⚠ Reads are real (fetched). PUT updates an in-memory buffer only — it does NOT persist to
 // the real data file. Real in-place persistence (to a copy) is wired separately.
 
-import { beep } from '../term/beep.js';
-import { KU42_TO_UTF8, UTF8_TO_KU42 } from '../codec/ku42.js';
-import { mbfSingleToFloat, floatToMbfSingle, mbfDoubleToFloat, encodeMbfDoubleDecimal } from '../codec/mbf.js';
-import { formatUsing } from '../term/printusing.js';
-import * as store from '../data/store.js';
-import { ReportPrinter } from '../print/report.js';
 
 // Sentinel returned by the synchronous fast path (evlS/execS/runS/…) when a statement needs
 // async execution — INPUT, INKEY$, INPUT$, OPEN, PUT, CHAIN, or an empty-body delay FOR. The
@@ -230,8 +224,8 @@ const bytesOf = (s) => Uint8Array.from(s, (ch) => ch.charCodeAt(0) & 0xff);
 const strOf = (bytes) => Array.from(bytes, (b) => String.fromCharCode(b)).join('');
 
 // ── interpreter ───────────────────────────────────────────────────────────────
-export class Basic {
-  constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.onPrintReady = null; this.store = store; }
+class Basic {
+  constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.onPrintReady = null; }
 
   // GW-BASIC: A%, A#, A$ are distinct variables; A and A! are the same (single).
   // So keep %/#/$ in the key; '!' or no suffix collapse to the bare name.
@@ -512,7 +506,7 @@ export class Basic {
         f.data.set(f.buffer, off);                                   // update in-memory image
         if (f.isNew) { f.dirty = true; return null; }                // scratch file: defer to CLOSE (one flush)
         try {
-          await this.store.writeRecord(f.name, rec, f.recSize, f.buffer.slice()); // existing file: real in-place write
+          await writeRecord(f.name, rec, f.recSize, f.buffer.slice()); // existing file: real in-place write
         } catch (e) {
           console.error(`PUT ${f.name} rec=${rec} FAILED:`, e);
           this.s.locate(24, 1); this.s.color(15, 4); this.s.put(`WRITE FAILED rec ${rec}: ${e.message}`.slice(0, 79)); this.s.color(7, 0); this.s.render();
@@ -529,8 +523,8 @@ export class Basic {
         return null;
       }
       case 'if': return this.runStatements(truthy(await this.evl(st.cond)) ? st.then : st.else);
-      case 'kill': await this.store.kill(fileName(await this.evl(st.name))); return null;
-      case 'name': await this.store.rename(fileName(await this.evl(st.from)), fileName(await this.evl(st.to))); return null;
+      case 'kill': await kill(fileName(await this.evl(st.name))); return null;
+      case 'name': await rename(fileName(await this.evl(st.from)), fileName(await this.evl(st.to))); return null;
     }
     return null;
   }
@@ -538,19 +532,19 @@ export class Basic {
   // CLOSE: flush a buffered scratch (newly-created) file to disk in one write; existing files
   // were already written in place per-record, so nothing to flush.
   async closeFile(fileno) {
-    const flush = async (f) => { if (f && f.isNew && f.dirty) { await this.store.writeWholeFile(f.name, f.data); f.dirty = false; } };
+    const flush = async (f) => { if (f && f.isNew && f.dirty) { await writeWholeFile(f.name, f.data); f.dirty = false; } };
     if (fileno != null) { await flush(this.files[fileno]); delete this.files[fileno]; }
     else { for (const k of Object.keys(this.files)) await flush(this.files[k]); this.files = {}; }
     return null;
   }
 
   async openFile(fileno, name, recSize) {
-    if (!this.store.isConnected()) throw new Error(`Data folder not connected — click "Connect data folder" before opening ${name}.`);
+    if (!isConnected()) throw new Error(`Data folder not connected — click "Connect data folder" before opening ${name}.`);
     let data, isNew = false;
     try {
-      data = await this.store.readFile(name);          // existing file → in-place per-record writes
+      data = await readFile(name);          // existing file → in-place per-record writes
     } catch {
-      await this.store.openOrCreate(name);             // GW-BASIC OPEN FOR RANDOM auto-creates
+      await openOrCreate(name);             // GW-BASIC OPEN FOR RANDOM auto-creates
       data = new Uint8Array(0); isNew = true;     // new scratch file → buffer, flush whole on CLOSE
     }
     this.files[fileno] = { name, recSize, data, buffer: new Uint8Array(recSize), fields: {}, isNew, dirty: false };

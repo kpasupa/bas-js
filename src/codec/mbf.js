@@ -1,4 +1,4 @@
-// MBF (Microsoft Binary Format) — GW-BASIC MKS$/MKD$ (encode) and CVS/CVD (decode).
+﻿// MBF (Microsoft Binary Format) — GW-BASIC MKS$/MKD$ (encode) and CVS/CVD (decode).
 // NOT IEEE 754. Exponent bias 128, implicit leading mantissa 1, exponent in the LAST
 // byte, sign in the top bit of the byte before it.
 //
@@ -11,7 +11,7 @@
 //     preserves original bytes for any field the user did not edit.
 
 // ─── Decoders ────────────────────────────────────────────────────────────────
-export function mbfSingleToFloat(b) {
+function mbfSingleToFloat(b) {
   const exponent = b[3];
   if (exponent === 0) return 0;
   const sign = b[2] & 0x80 ? 1 : 0;
@@ -20,7 +20,7 @@ export function mbfSingleToFloat(b) {
   return sign ? -value : value;
 }
 
-export function mbfDoubleToFloat(b) {
+function mbfDoubleToFloat(b) {
   const exponent = b[7];
   if (exponent === 0) return 0;
   const sign = b[6] & 0x80 ? 1 : 0;
@@ -50,7 +50,7 @@ function frexp(value) {
 }
 
 // ─── Single encoder (4 bytes) — exact inverse; lossless for integer dates ────
-export function floatToMbfSingle(value) {
+function floatToMbfSingle(value) {
   if (value === 0) return new Uint8Array(4);
   const sign = value < 0 ? 0x80 : 0;
   let [m, e] = frexp(Math.abs(value)); // value = m * 2^e, m in [0.5,1)
@@ -122,10 +122,9 @@ function decimalToRational(text) {
 
 // Primary amount encoder. Accepts a decimal string (preferred — the user's typed text)
 // or a JS number (converted via its shortest round-trip decimal).
-export function encodeMbfDoubleDecimal(value) {
+function encodeMbfDoubleDecimal(value) {
   const text = typeof value === 'number' ? value.toString() : value;
   const { num, den } = decimalToRational(text);
   return mbfDoubleFromRational(num, den);
 }
 
-export { mbfDoubleFromRational };

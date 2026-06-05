@@ -1,20 +1,15 @@
-// bas-js — generic GW-BASIC runtime. Point it at a folder of .BAS programs + their data files
+﻿// bas-js — generic GW-BASIC runtime. Point it at a folder of .BAS programs + their data files
 // (CHQ.DAT, CUSTOMER, …); it runs them in an 80×25 terminal, reading/writing through one folder
 // handle. No program whitelist: any program CHAIN names is loaded on demand from that folder.
 
-import { Screen } from './term/screen.js';
-import { Terminal } from './term/input.js';
-import { Basic } from './interp/basic.js';
-import { showPrintPreview } from './print/report.js';
-import * as store from './data/store.js';
 
 const BOOT = 'PASSWORD';   // first program to run (the legacy system's entry point)
 
 // Load a .BAS by program name from the connected folder (filenames are uppercased to match
 // GW-BASIC/DOS). Returns null if absent.
-const loadBas = (name) => store.readText(`${String(name).trim().toUpperCase()}.BAS`);
+const loadBas = (name) => readText(`${String(name).trim().toUpperCase()}.BAS`);
 
-export async function runApp(el, status) {
+async function runApp(el, status) {
   const s = new Screen(el);
   const term = new Terminal(s);
   term.attach();
@@ -39,13 +34,13 @@ export async function runApp(el, status) {
 // connect button (user gesture → folder pick). `onConnected` fires as soon as the folder is
 // granted (so the UI can reveal the screen) — BEFORE the long-running program loop starts.
 // Writes persist through the granted handle.
-export async function connectAndRun(el, status, fromGesture, onConnected) {
+async function connectAndRun(el, status, fromGesture, onConnected) {
   try {
-    let ok = await store.tryReconnect('readwrite');                        // silent if previously granted
-    if (!ok && fromGesture) ok = await store.regrant('readwrite');         // re-grant saved handle (no picker)
-    if (!ok && fromGesture) ok = !!(await store.pickFolder('readwrite')); // first time: pick folder
+    let ok = await tryReconnect('readwrite');                        // silent if previously granted
+    if (!ok && fromGesture) ok = await regrant('readwrite');         // re-grant saved handle (no picker)
+    if (!ok && fromGesture) ok = !!(await pickFolder('readwrite')); // first time: pick folder
     if (!ok) { status && status(fromGesture ? 'permission denied' : 'click “Connect data folder”'); return false; }
-    status && status(`connected: ${store.folderName()} — writes persist`);
+    status && status(`connected: ${folderName()} — writes persist`);
     if (onConnected) onConnected();
     await runApp(el, status);
     return true;

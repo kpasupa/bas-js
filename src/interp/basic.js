@@ -220,6 +220,17 @@ function ku42Encode(u) {
   for (const ch of u) { const cp = ch.codePointAt(0); if (cp < 0x80) r += String.fromCharCode(cp); else if (UTF8_TO_KU42[ch] !== undefined) r += String.fromCharCode(UTF8_TO_KU42[ch]); else r += '?'; }
   return r;
 }
+
+// Pluggable codec wrappers. Forks can set window._bas_codec = { display(s), encode(s) }
+// for a custom encoding (e.g. Shift-JIS). null = passthrough (raw bytes). undefined = KU42.
+function applyDisplay(s) {
+  if (window._bas_codec === null) return s;
+  return (window._bas_codec?.display ?? ku42Display)(s);
+}
+function applyEncode(s) {
+  if (window._bas_codec === null) return s;
+  return (window._bas_codec?.encode ?? ku42Encode)(s);
+}
 const bytesOf = (s) => Uint8Array.from(s, (ch) => ch.charCodeAt(0) & 0xff);
 const strOf = (bytes) => Array.from(bytes, (b) => String.fromCharCode(b)).join('');
 
@@ -338,7 +349,7 @@ class Basic {
     for (const it of st.lead) {
       if (it.kind === 'tab') { const v = this.evlS(it.expr); if (v === _S) return _S; sink.tab(num(v)); }
       else if (it.kind === 'spc') { const v = this.evlS(it.expr); if (v === _S) return _S; st.lpr ? sink.spaces(num(v)) : sink.put(' '.repeat(num(v))); }
-      else { const v = this.evlS(it.expr); if (v === _S) return _S; sink.put(typeof v === 'number' ? basicPrintNum(v) : (st.lpr ? v : ku42Display(v))); }
+      else { const v = this.evlS(it.expr); if (v === _S) return _S; sink.put(typeof v === 'number' ? basicPrintNum(v) : (st.lpr ? v : applyDisplay(v))); }
     }
     if (st.using != null) {
       const mask = this.evlS(st.using); if (mask === _S) return _S;
@@ -556,7 +567,7 @@ class Basic {
     for (const it of st.lead) {
       if (it.kind === 'tab') s.tab(num(await this.evl(it.expr)));
       else if (it.kind === 'spc') s.put(' '.repeat(num(await this.evl(it.expr))));
-      else { const v = await this.evl(it.expr); s.put(typeof v === 'number' ? basicPrintNum(v) : ku42Display(v)); }
+      else { const v = await this.evl(it.expr); s.put(typeof v === 'number' ? basicPrintNum(v) : applyDisplay(v)); }
     }
     if (st.using != null) {
       const mask = String(await this.evl(st.using));
@@ -592,11 +603,11 @@ class Basic {
     // block for input. Matches the original "print a report, then loop back to the prompt"
     // screens (e.g. CHQ07B 1000→GOTO 140) — universal, no per-program special-casing.
     if (this.onPrintReady && !this.printer.isEmpty()) { this.onPrintReady(this.printer.lines); this.printer.reset(); }
-    if (st.prompt != null) { this.s.put(ku42Display(st.prompt)); this.s.render(); }
+    if (st.prompt != null) { this.s.put(applyDisplay(st.prompt)); this.s.render(); }
     const v = st.vars[0];
     const type = v.endsWith('$') ? 'str' : v.endsWith('%') ? 'int' : 'num';
     const raw = await this.term.inputLine({ type: type === 'int' ? 'int' : type === 'num' ? 'num' : 'str', question: st.sep === ';' || st.prompt == null });
-    this.setVar(v, type === 'str' ? ku42Encode(raw) : raw);
+    this.setVar(v, type === 'str' ? applyEncode(raw) : raw);
     return null;
   }
 

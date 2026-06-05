@@ -55,10 +55,10 @@
   #add-form .picked { font-family: Consolas, monospace; font-size: 12px; color: #4ade80;
                       background: #0a0a0a; border: 1px solid #222; border-radius: 4px;
                       padding: 5px 8px; margin-bottom: 10px; }
-  #add-form input { width: 100%; background: #0a0a0a; border: 1px solid #333; color: #eee;
+  #add-form input, #add-form select { width: 100%; background: #0a0a0a; border: 1px solid #333; color: #eee;
                     font: inherit; font-size: 13px; padding: 6px 9px; border-radius: 4px;
                     margin-bottom: 10px; outline: none; }
-  #add-form input:focus { border-color: #4ade80; }
+  #add-form input:focus, #add-form select:focus { border-color: #4ade80; }
   .form-row { display: flex; gap: 8px; }
 
   /* add button + status */
@@ -88,6 +88,11 @@
       <div class="picked" id="form-folder">—</div>
       <label>Boot file</label>
       <input id="form-boot" type="text" value="PASSWORD" spellcheck="false">
+      <label>Encoding</label>
+      <select id="form-codec">
+        <option value="ku42">KU42 (Thai)</option>
+        <option value="none">None (ASCII / raw bytes)</option>
+      </select>
       <div class="form-row">
         <button class="btn btn-run" id="form-save">Save</button>
         <button class="btn btn-ghost" id="form-cancel">Cancel</button>
@@ -172,7 +177,7 @@
       d.innerHTML = `
         <div class="proj-info">
           <div class="proj-name">${gateEsc(p.name)}</div>
-          <div class="proj-boot">${gateEsc(p.boot)}.BAS</div>
+          <div class="proj-boot">${gateEsc(p.boot)}.BAS &nbsp;·&nbsp; ${p.codec === 'none' ? 'raw' : 'KU42'}</div>
           <div class="proj-st" id="pst-${i}"></div>
         </div>
         <button class="btn btn-run  btn-connect" data-i="${i}">Run</button>
@@ -201,7 +206,8 @@
       try {
         const perm = await p.handle.requestPermission({ mode: 'readwrite' });
         if (perm !== 'granted') { gst('Permission denied.', '#f87171'); return; }
-        await setActiveProject({ handle: p.handle, boot: p.boot, name: p.name });
+        await setActiveProject({ handle: p.handle, boot: p.boot, name: p.name, codec: p.codec });
+        window._bas_codec = p.codec === 'none' ? null : undefined;
         gst('');
         hideGate();
         await connectAndRun(el, gst, false, () => {});
@@ -211,11 +217,13 @@
 
     if (btn.classList.contains('btn-edit')) {
       const newBoot = prompt('Boot file (without .BAS):', p.boot);
-      if (newBoot?.trim()) {
-        projects[i].boot = newBoot.trim().toUpperCase();
-        await saveProjects(projects);
-        renderProjects();
-      }
+      if (newBoot?.trim()) projects[i].boot = newBoot.trim().toUpperCase();
+      const codecs = ['ku42', 'none'];
+      const cur = codecs.indexOf(p.codec ?? 'ku42');
+      const newCodec = prompt('Encoding — 0: KU42 (Thai)  1: None (raw)', cur >= 0 ? cur : 0);
+      if (newCodec !== null) projects[i].codec = codecs[+newCodec] ?? 'ku42';
+      await saveProjects(projects);
+      renderProjects();
     }
 
     if (btn.classList.contains('btn-remove')) {
@@ -241,9 +249,10 @@
 
   document.getElementById('form-save').onclick = async () => {
     if (!pendingHandle) return;
-    const boot = document.getElementById('form-boot').value.trim().toUpperCase() || 'PASSWORD';
+    const boot  = document.getElementById('form-boot').value.trim().toUpperCase() || 'PASSWORD';
+    const codec = document.getElementById('form-codec').value;
     const idx = projects.findIndex(p => p.name === pendingHandle.name);
-    const entry = { handle: pendingHandle, boot, name: pendingHandle.name };
+    const entry = { handle: pendingHandle, boot, codec, name: pendingHandle.name };
     if (idx >= 0) projects[idx] = entry; else projects.push(entry);
     await saveProjects(projects);
     pendingHandle = null;
@@ -261,8 +270,11 @@
   (async () => {
     await loadProjects();
     // Auto-run if active project still has live permission (warm start / redirect from picker)
-    const boot = await tryReconnectActive();
+    const active = await idbGetKey('active');
+    const boot   = active && (await active.handle?.queryPermission({ mode: 'readwrite' })) === 'granted'
+                   ? await tryReconnectActive() : null;
     if (boot) {
+      window._bas_codec = active.codec === 'none' ? null : undefined;
       hideGate();
       await connectAndRun(el, gst, false, () => {});
       showGate();

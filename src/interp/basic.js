@@ -604,7 +604,7 @@ class Basic {
       // gosub recurses into a subroutine that may block partway; defer to the async path so a
       // blocking op there can't cause partial re-execution.
       case 'gosub': return _S;
-      case 'color': { const a = this.evlS(st.args[0]); if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; this.s.color(num(a), b != null ? num(b) : null); if (this.gfx && this.gfx.active()) this.gfx.color(num(a), b != null ? num(b) : null); return null; }
+      case 'color': { const a = this.evlS(st.args[0]); if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; if (this.gfx && this.gfx.active()) this.gfx.color(num(a), b != null ? num(b) : null); else this.s.color(num(a), b != null ? num(b) : null); return null; } // graphics: COLOR = background,palette (text stays white)
       case 'locate': { const a = this.evlS(st.args[0]); if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; this.s.locate(num(a), b != null ? num(b) : null); return null; }
       case 'assign': {
         const v = this.evlS(st.expr); if (v === _S) return _S;
@@ -863,7 +863,7 @@ class Basic {
         this.vars = keepV; this.arrays = keepA;                                                            // everything else resets
         return { t: 'chain', name };
       }
-      case 'color': { const fg = num(await this.evl(st.args[0])), bg = st.args[1] != null ? num(await this.evl(st.args[1])) : null; this.s.color(fg, bg); if (this.gfx && this.gfx.active()) this.gfx.color(fg, bg); return null; }
+      case 'color': { const fg = num(await this.evl(st.args[0])), bg = st.args[1] != null ? num(await this.evl(st.args[1])) : null; if (this.gfx && this.gfx.active()) this.gfx.color(fg, bg); else this.s.color(fg, bg); return null; }
       case 'locate': this.s.locate(num(await this.evl(st.args[0])), st.args[1] != null ? num(await this.evl(st.args[1])) : null); return null;
       case 'assign': {
         const v = await this.evl(st.expr);
@@ -919,7 +919,8 @@ class Basic {
       case 'gscreen': {
         const m = num(await this.evl(st.mode));
         if (this.gfx) this.gfx.screen(m);
-        m === 0 ? this.s.cls() : this.s.clearTransparent();   // SCREEN clears; text grid transparent in graphics
+        if (m === 0) { this.s.gfx = null; this.s.color(7, 0); this.s.cls(); }      // back to text: default grey/black
+        else { this.s.gfx = this.gfx; this.s.color(m === 2 ? 1 : 3, 0); this.s.clearTransparent(); } // graphics: white text on bg 0, shared palette
         return null;
       }
       case 'pset': {

@@ -26,6 +26,7 @@ class Graphics {
     this.W = 320; this.H = 200; this.mode = 0; this.fg = 3; this.bg = 0;
     this.lastX = 0; this.lastY = 0; this.view = null; this.win = null;
     this.colors = CGA16.slice(); this.ncol = 16;
+    if (typeof window !== 'undefined') window.addEventListener('resize', () => { if (this.active()) this._fit(); }); // keep aligned on zoom/resize
   }
 
   screen(mode) {

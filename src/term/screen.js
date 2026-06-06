@@ -17,8 +17,20 @@ class Screen {
     this.row = 1;
     this.col = 1;
     this.cursorOn = false;
+    this.gfx = null;          // when set + active, text colours map through the canvas palette
     this.cells = [];
     this.cls();
+  }
+
+  // Colour index → CSS colour. In graphics mode use the canvas's live palette (so SCREEN 1's
+  // 4-colour CGA + PALETTE remaps apply to text, matching the graphics); else the 16-colour CGA.
+  _col(i) {
+    if (this.gfx && this.gfx.active() && this.gfx.colors) {
+      const n = this.gfx.ncol || this.gfx.colors.length;
+      const c = this.gfx.colors[((i % n) + n) % n] || [0, 0, 0];
+      return `rgb(${c[0]},${c[1]},${c[2]})`;
+    }
+    return CGA[i];
   }
 
   cls() {
@@ -98,8 +110,8 @@ class Screen {
         const cls = run.blink ? 'blink' : run.cursor ? 'cursor-blink' : '';
         // Untouched cells emit no background → transparent, so the graphics canvas (and in text
         // mode, the black body) shows through. Touched cells (and the cursor) stay opaque.
-        const bgPart = run.set ? `;background:${CGA[run.bg]}` : '';
-        html += `<span style="color:${CGA[run.fg]}${bgPart}"${cls ? ` class="${cls}"` : ''}>${run.text}</span>`;
+        const bgPart = run.set ? `;background:${this._col(run.bg)}` : '';
+        html += `<span style="color:${this._col(run.fg)}${bgPart}"${cls ? ` class="${cls}"` : ''}>${run.text}</span>`;
         run = null;
       };
       for (let c = 0; c < this.cols; c++) {

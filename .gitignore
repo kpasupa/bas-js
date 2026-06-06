@@ -12,9 +12,9 @@ _*.html
 CUSTOMER
 cheque/
 
-# Allow sample folder in repo
+# Allow sample folder in repo (incl. nested menu/demo folders)
 !sample/
-!sample/*.BAS
+!sample/**/*.BAS
 
 # Browser profile — Chrome runtime data, not source
 browser-profile/

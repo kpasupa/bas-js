@@ -1,8 +1,8 @@
 # bas-js
 
-A **GW-BASIC runtime in the browser** — runs legacy line-numbered `.BAS` programs in an 80×25 text terminal, reading and writing their original binary random-access data files in-place.
+A **GW-BASIC runtime in the browser** — runs legacy line-numbered `.BAS` programs in an 80×25 text terminal, with **CGA graphics and sound**, reading and writing their original binary random-access data files in-place.
 
-Built to revive old DOS GW-BASIC applications. The runtime is generic — point it at any folder of `.BAS` + data files and it runs them.
+Built to revive old DOS GW-BASIC applications. The runtime is generic — point it at any folder of `.BAS` + data files and it runs them. It covers essentially the whole GW-BASIC language a file runner can use; see **`interpreter.html`** for a keyword-by-keyword coverage map.
 
 ## Quick start
 
@@ -91,13 +91,23 @@ The interpreter calls `window._bas_codec.display(s)` for every PRINT/LPRINT outp
 
 ## What the interpreter supports
 
-- **Flow:** line numbers, GOTO / GOSUB / RETURN / ON..GOTO / ON..GOSUB / IF-THEN-ELSE
-- **Loops:** FOR / NEXT (with STEP)
-- **Statements:** CLS, COLOR, LOCATE, PRINT, LPRINT, INPUT, INPUT$, INKEY$, BEEP, END, SYSTEM, CHAIN, COMMON
-- **Files:** OPEN / FIELD / GET / PUT / CLOSE / LSET / KILL / NAME..AS (random-access binary files)
-- **Operators:** `+ - * / MOD`, `= <> < > <= >=`, `AND OR NOT`, string concat
-- **Math built-ins:** INT, ABS, SQR, SIN, COS, TAN, ATN, LOG, EXP, RND, SGN, FIX
-- **String / misc built-ins:** LEN, VAL, STR$, CHR$, RIGHT$, LEFT$, MID$, STRING$, SPACE$, TAB, SPC, PRINT USING, CVI/MKI$/CVS/CVD/MKS$/MKD$
+Open **`interpreter.html`** in a browser for the complete coverage map (each keyword tagged done / partial / dummy / skip). Highlights:
+
+- **Flow:** GOTO, GOSUB/RETURN, ON..GOTO/GOSUB, IF/THEN/ELSE, FOR/NEXT, WHILE/WEND, END, STOP
+- **Data:** variables + arrays (DIM n-D, ERASE, OPTION BASE), DATA/READ/RESTORE, DEF FN, DEFINT/SNG/DBL/STR, SWAP, RANDOMIZE (seedable RND), CLEAR
+- **Console:** PRINT (incl. USING), LPRINT, WRITE, INPUT, LINE INPUT, INKEY$, INPUT$, CLS, COLOR, LOCATE, BEEP, TAB/SPC
+- **Files:** random (OPEN/FIELD/GET/PUT/LSET/RSET) and sequential (OPEN FOR INPUT/OUTPUT/APPEND, INPUT#/PRINT#/WRITE#/LINE INPUT#, EOF/LOF/LOC); KILL, NAME, FILES, RESET
+- **Graphics** (`SCREEN 1/2` on a canvas): PSET/PRESET, LINE (B/BF), CIRCLE, PAINT, DRAW, GET/PUT, PALETTE, VIEW/WINDOW, POINT/PMAP — composited *under* the text layer, so text overlays graphics with authentic opaque boxes
+- **Sound:** SOUND, PLAY (MML) via Web Audio
+- **Traps:** ON ERROR GOTO / ERROR / ERR / ERL / RESUME, ON KEY (F-keys) / ON TIMER
+- **Operators:** `+ - * / ^ MOD`, `= <> < > <= >=`, `AND OR NOT`, string concat
+- **Functions:** full math/string/conversion set — INT, SQR, SIN…, LEN, MID$, INSTR, HEX$/OCT$, CINT/CSNG/CDBL, CVI/MKI$/CVS/CVD/MKS$/MKD$, DATE$/TIME$/TIMER, POS/CSRLIN, FRE, …
+
+Hardware keywords (PEEK/POKE/CALL/INP/OUT/WAIT/VARPTR) and editor commands (LIST/SAVE/EDIT/RENUM…) are intentionally out of scope — they need a real PC or an interactive editor. See `interpreter.html`.
+
+## Demos
+
+`sample/INTERPRETER.BAS` is a menu that walks every command group (BASIC / GW-BASIC → Commands / Statements / Functions / Operators) with a live example per keyword — boot it to explore the interpreter, including the graphics, sound, and `CHAIN`-colour demos. `sample/APP.BAS` + `MATH.BAS` are a smaller `CHAIN` demo.
 
 ## Codecs
 
@@ -116,23 +126,29 @@ The interpreter calls `window._bas_codec.display(s)` for every PRINT/LPRINT outp
 ## File layout
 
 ```
-index.html              gate UI + terminal shell
+index.html              gate UI + terminal shell + graphics canvas
+interpreter.html        keyword-by-keyword coverage map (done / partial / dummy / skip)
 picker.html             standalone project manager (optional)
 run.bat                 Windows launcher (dedicated browser profile)
 run.sh                  macOS/Linux launcher
 sample/
-  APP.BAS               feature-demo menu (display, input, loops, PRINT USING, BEEP, LPRINT, CHAIN)
-  MATH.BAS              number demo; receives a value via CHAIN from APP, or asks for input standalone
+  INTERPRETER.BAS       command test menu (BASIC / GW-BASIC, one demo per keyword group)
+  BASIC/ GWBASIC/       the nested menu + demo programs it CHAINs to
+  APP.BAS  MATH.BAS     small CHAIN demo
 src/
-  app.js                boot loop + folder connect
-  interp/basic.js       GW-BASIC interpreter
+  app.js                boot loop + folder connect + gfx/audio wiring
+  interp/basic.js       GW-BASIC interpreter (tokenizer, parser, runtime)
   term/
-    screen.js           80×25 CGA terminal (16 colors, blink, cursor)
-    input.js            keyboard input, INPUT line, INKEY$
+    screen.js           80×25 CGA terminal (16 colors, blink, cursor, transparent-cell overlay)
+    input.js            keyboard input, INPUT line, INKEY$, ON KEY trap buffer
     beep.js             BEEP via WebAudio
     printusing.js       PRINT USING numeric masks
+  gfx/
+    canvas.js           SCREEN 1/2 graphics — indexed CGA framebuffer, PSET/LINE/CIRCLE/PAINT/DRAW/PALETTE
+  audio/
+    sound.js            SOUND tone + PLAY (MML) via Web Audio
   data/
-    store.js            File System Access API + IndexedDB handle persistence
+    store.js            File System Access API + IndexedDB; nested-path .BAS loading
     addressing.js       record addressing (1-based random files)
     schema.js           CUSTOMER / CHQ.DAT parse + patch
   codec/

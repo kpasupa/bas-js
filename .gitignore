@@ -16,5 +16,9 @@ cheque/
 !sample/
 !sample/**/*.BAS
 
+# Dev tooling + device-layer demo programs — not part of the published runtime
+test/
+sample/untestable/
+
 # Browser profile — Chrome runtime data, not source
 browser-profile/

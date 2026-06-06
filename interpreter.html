@@ -85,10 +85,11 @@
     <span class="badge skip">⌫ SKIP</span> won't implement — hardware / machine-language, or editor-only (out of scope for a file runner)<br><br>
     <b>BASIC</b> = the portable core common to the Microsoft BASIC family (flow, I/O, math/string functions, operators).
     <b>GW-BASIC</b> = the IBM-PC / MS-DOS additions (screen, graphics, sound, record &amp; sequential files, event/error trapping, type-conversion).<br>
-    Graphics (canvas) + sound (Web Audio) are now implemented — run <code>sample/untestable/LIST.BAS</code> to see them.
-    Only two <span class="badge todo">○ TODO</span> remain: <code>FILES</code> (directory listing) and <code>ON KEY/TIMER</code> (event traps).<br>
-    Notes: <code>OPEN</code> = RANDOM + sequential. <code>WIDTH</code>/<code>KEY</code> parse but do nothing; <code>VIEW PRINT</code> accepted as a no-op; <code>SCREEN()</code> returns a stub (no text-grid readback).
-    Verified by <code>test/harness.html</code> (113 cases, headless Chrome) — every ✓ has a test; device-layer features use recording mocks + the sample demos.
+    <b>Status: every runnable keyword is implemented — zero TODO.</b> What remains is intentional:
+    <span class="badge part">◐ PART</span> simplified stubs (<code>WIDTH</code>/<code>KEY</code> parse but do nothing, <code>VIEW PRINT</code> no-op, <code>SCREEN()</code> stub),
+    <span class="badge dummy">⊘ DUMMY</span> <code>FRE</code>, and <span class="badge skip">⌫ SKIP</span> hardware/machine-language + editor-only commands.<br>
+    Graphics (<code>SCREEN 1/2</code> on a canvas, composited under the text layer) and sound (Web Audio) are implemented.
+    Boot <code>sample/INTERPRETER.BAS</code> for a live demo of every group. Notes: <code>OPEN</code> = RANDOM + sequential.
   </footer>
 </div>
 

@@ -93,17 +93,26 @@ async function listFiles() {
   return names.sort();
 }
 
+// Resolve a possibly-nested path ("DIR/SUB/FILE.BAS") to a file handle by walking subfolders.
+// Flat names (no slash) behave exactly as before, so data files are unaffected.
+async function fileHandleFor(name, create = false) {
+  const parts = String(name).split(/[/\\]/).filter(Boolean);
+  let dir = requireDir();
+  for (let i = 0; i < parts.length - 1; i++) dir = await dir.getDirectoryHandle(parts[i], create ? { create: true } : undefined);
+  return dir.getFileHandle(parts[parts.length - 1], create ? { create: true } : undefined);
+}
+
 // ─── reads ───────────────────────────────────────────────────────────────────
 async function readFile(name) {
-  const fh = await requireDir().getFileHandle(name);
+  const fh = await fileHandleFor(name);
   return new Uint8Array(await (await fh.getFile()).arrayBuffer());
 }
 
-// Read a file as text (for loading .BAS programs from the connected folder). Returns null if
-// the file does not exist, so CHAIN to a missing program is graceful.
+// Read a file as text (for loading .BAS programs from the connected folder, incl. nested menu
+// folders like BASIC/COMMAND/RUN.BAS). Returns null if missing, so CHAIN to it is graceful.
 async function readText(name) {
   try {
-    const fh = await requireDir().getFileHandle(name);
+    const fh = await fileHandleFor(name);
     return await (await fh.getFile()).text();
   } catch {
     return null;

@@ -220,6 +220,9 @@ test('trap: KEY(1) OFF ignores',
 test('trap: ON TIMER GOSUB',
   '10 ON TIMER(1) GOSUB 100\n20 TIMER ON\n30 FOR I=1 TO 80:X=I:NEXT\n40 IF F>=1 THEN PRINT "TICKED"\n50 END\n100 F=F+1:RETURN',
   has('TICKED'), null, null, null, { now:(function(){let t=0;return ()=>{t+=300;return t;};})() });
+test('trap: fires inside GOSUB',   // the menu demos run inside ON..GOSUB, so traps must fire there
+  '10 ON KEY(1) GOSUB 200\n20 KEY(1) ON\n30 GOSUB 100\n40 PRINT "F=";F\n50 END\n100 FOR I=1 TO 30:X=I:NEXT:RETURN\n200 F=1:RETURN',
+  has('F= 1'), null, null, null, { traps:[1] });
 test('tron: trace lines',   '10 TRON\n20 PRINT "X"\n30 TROFF\n40 PRINT "Y"',
   (r)=> r.error?('ERR:'+r.error):((r.screen.includes('[20]')&&r.screen.includes('[30]')&&!r.screen.includes('[40]'))?true:`got ${JSON.stringify(r.screen)}`));
 test('reset: no open files','10 RESET\n20 PRINT "OK"', has('OK'));

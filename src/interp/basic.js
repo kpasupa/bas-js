@@ -735,9 +735,9 @@ class Basic {
       // Keep the UI responsive on long synchronous scans: yield to the event loop every ~50ms
       // (only in the outer loop, not inside GOSUB recursions, to avoid extra overhead).
       if (!stopOnReturn && nowMs() - lastYield > 50) { await new Promise((r) => setTimeout(r)); lastYield = nowMs(); }
-      // Event traps (ON KEY / ON TIMER): between statements at top level, if armed, fire the
-      // handler as an implicit GOSUB (no re-entry while inside one).
-      if (!stopOnReturn && !this.inTrap && this.anyTrapOn) {
+      // Event traps (ON KEY / ON TIMER): between statements, if armed, fire the handler as an
+      // implicit GOSUB. Fires inside GOSUBs too (GW-BASIC does); inTrap blocks re-entry.
+      if (!this.inTrap && this.anyTrapOn) {
         const tl = this._checkTraps();
         if (tl) {
           this.inTrap = true;

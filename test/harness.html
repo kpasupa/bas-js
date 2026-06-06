@@ -137,6 +137,10 @@ test('common: array passes',
 test('common: non-common resets',
   '10 COMMON X\n20 X=1\n30 Y=7\n40 CHAIN "B"', has('Y= 0'), null, null,
   { B: '10 COMMON X\n20 PRINT "Y=";Y' });
+test('common: round-trip flag (PICK/SHOW pattern)',  // A->B->A; B sets a COMMON flag so A detects return
+  '10 COMMON F\n20 IF F=1 THEN PRINT "RETURNED":END\n30 CHAIN "B"',
+  has('RETURNED'), null, null,
+  { A: '10 COMMON F\n20 IF F=1 THEN PRINT "RETURNED":END\n30 CHAIN "B"', B: '10 COMMON F\n20 F=1:CHAIN "A"' });
 
 // ════════════════════════════════════════════════════════════════════════════
 // PHASE 0 — new features. Tests added one keyword at a time as they're built.

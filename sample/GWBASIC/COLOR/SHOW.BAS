@@ -1,4 +1,4 @@
-10 COMMON SC,TC
+10 COMMON SC,TC,BACK
 20 REM arrived by CHAIN - screen is still in graphics mode with the picked colours
 30 CLS
 40 LOCATE 4,4:PRINT "You came here by CHAIN."
@@ -9,4 +9,4 @@
 90 LOCATE 11,4:PRINT "on your picked background."
 100 LOCATE 14,4:PRINT "Press a key to go back..."
 110 A$=INPUT$(1)
-120 SCREEN 0:CHAIN "GWBASIC/COLOR/PICK"
+120 BACK=1:CHAIN "GWBASIC/COLOR/PICK"

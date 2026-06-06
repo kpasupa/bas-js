@@ -200,6 +200,7 @@ function parseStatement(c) {
         return { t: 'gview', x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
       }
       case 'RESET': c.next(); return { t: 'close', fileno: null };   // RESET = close all open files
+      case 'FILES': { c.next(); let pat = null; if (!c.eof() && c.peek().k !== 'colon') pat = parseExpr(c); return { t: 'files', pat }; }
       case 'LINE': {
         c.next();
         if (kw(c.peek(), 'INPUT')) {                       // LINE INPUT [;]["prompt";] var$  /  LINE INPUT #n, var$
@@ -637,7 +638,7 @@ class Basic {
         return this.runStatementsS(branch);
       }
       // Blocking / async-only (disk I/O or input):
-      case 'input': case 'lineinput': case 'finput': case 'flineinput': case 'open': case 'put': case 'chain': case 'close': case 'kill': case 'name': case 'clear': case 'sound': case 'play': return _S;
+      case 'input': case 'lineinput': case 'finput': case 'flineinput': case 'open': case 'put': case 'chain': case 'close': case 'kill': case 'name': case 'clear': case 'sound': case 'play': case 'files': return _S;
     }
     return _S; // unknown → let async exec handle it
   }
@@ -903,6 +904,13 @@ class Basic {
       case 'gput': { if (this.gfx) this.gfx.putImage(num(await this.evl(st.x)), num(await this.evl(st.y)), (this.gfxStore || {})[this.varKey(st.arr)]); return null; }
       case 'draw': { if (this.gfx) this.gfx.draw(String(await this.evl(st.str))); return null; }
       case 'viewprint': return null;   // text scroll window — accepted, no-op on a fixed full screen
+      case 'files': {
+        let names = (typeof listFiles === 'function') ? await listFiles() : [];
+        if (st.pat) { const p = String(await this.evl(st.pat)).toUpperCase().trim(); if (p && p !== '*.*' && p !== '*') names = names.filter((n) => matchPattern(n, p)); }
+        for (let i = 0; i < names.length; i++) { this.s.put(names[i].padEnd(13).slice(0, 13)); if ((i + 1) % 5 === 0) this.s.newline(); }
+        if (names.length % 5 !== 0 || names.length === 0) this.s.newline();
+        this.s.render(); return null;
+      }
       case 'onerror': this.onErrorLine = st.line; return null;
       case 'raiseerror': { const code = num(await this.evl(st.code)); const e = new Error('BASIC error ' + code); e.basCode = code; throw e; }
       case 'resume': return { t: 'resume', mode: st.mode, line: st.line };
@@ -1146,6 +1154,11 @@ function branchIsPure(stmts) {
 // the same file. The .BAS mix case (e.g. CHQ-ADJ: OPEN "CHQ.DAT" but KILL "chq.dat"). Uppercase at
 // the interpreter's file boundary so every op targets one canonical name, matching the real files.
 const fileName = (v) => String(v).trim().toUpperCase();
+// DOS-style wildcard match for FILES (only * and ? — enough for "*.DAT", "CHQ*", "?.BAS").
+function matchPattern(name, pat) {
+  const re = '^' + pat.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+  return new RegExp(re).test(name);
+}
 
 const num = (v) => (typeof v === 'number' ? v : parseFloat(v) || 0);
 // GW-BASIC CINT rounds to the nearest integer, ties to even (banker's rounding): 2.5→2, 3.5→4.

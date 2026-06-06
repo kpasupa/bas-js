@@ -85,6 +85,14 @@ function requireDir() {
   return dirHandle;
 }
 
+// Directory listing (uppercased, sorted) — backs the BASIC FILES command.
+async function listFiles() {
+  if (!dirHandle) return [];
+  const names = [];
+  for await (const entry of dirHandle.values()) if (entry.kind === 'file') names.push(entry.name.toUpperCase());
+  return names.sort();
+}
+
 // ─── reads ───────────────────────────────────────────────────────────────────
 async function readFile(name) {
   const fh = await requireDir().getFileHandle(name);

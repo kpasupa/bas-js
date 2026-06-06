@@ -26,6 +26,7 @@ window.writeWholeFile= async (name, bytes) => { window.__fs[name] = _u8(bytes); 
 window.openOrCreate  = async (name) => { if(!(name in window.__fs)) window.__fs[name]=new Uint8Array(0); };
 window.kill          = async (name) => { delete window.__fs[name]; };
 window.rename        = async (o,n) => { window.__fs[n]=window.__fs[o]; delete window.__fs[o]; };
+window.listFiles     = async () => Object.keys(window.__fs).map(n=>n.toUpperCase()).sort();
 
 // ── minimal Screen: line-buffer model good enough for sequential PRINT/TAB/LOCATE ──
 class TestScreen {
@@ -226,6 +227,10 @@ test('seq: APPEND',
 test('seq: LOF',
   '10 OPEN "F.DAT" FOR OUTPUT AS #1\n20 PRINT #1,"ABCDE";\n30 CLOSE #1\n40 OPEN "F.DAT" FOR INPUT AS #1\n50 PRINT LOF(1)\n60 CLOSE #1',
   has('5'));
+test('files: lists all', '10 FILES', has('A.DAT'), null, { 'A.DAT':'x', 'B.BAS':'y', 'C.DAT':'z' });
+test('files: pattern',   '10 FILES "*.DAT"',
+  (r)=> r.error?('ERR:'+r.error):((r.screen.includes('A.DAT')&&r.screen.includes('C.DAT')&&!r.screen.includes('B.BAS'))?true:`got ${JSON.stringify(r.screen)}`),
+  null, { 'A.DAT':'x', 'B.BAS':'y', 'C.DAT':'z' });
 
 // ── device-layer (verified via recording mocks; real output checked by sample/untestable/*.BAS) ──
 test('snd: SOUND args',   '10 SOUND 440,9', called('sound', 440, 9));
@@ -252,6 +257,7 @@ test('sample: PSET.BAS', '10 SCREEN 1:CLS\n30 FOR I=0 TO 319\n40 Y=100+80*SIN(I/
 test('sample: WINDOW.BAS','10 SCREEN 2:CLS\n30 WINDOW (-1.2,-1.2)-(1.2,1.2)\n50 LINE (-1.2,0)-(1.2,0),1\n80 FOR A=0 TO 6.3 STEP .02\n90 PSET (SIN(A),COS(A)),1\n100 NEXT\n160 A$=INPUT$(1)\n170 CHAIN "LIST"', called('setWindow'), [' ']);
 test('sample: GETPUT.BAS','10 SCREEN 1:CLS\n30 CIRCLE (30,30),18,2\n40 PAINT (30,30),2,2\n60 GET (10,10)-(50,50),S\n70 FOR I=0 TO 270 STEP 45\n80 PUT (I,90),S\n100 NEXT\n110 A$=INPUT$(1)\n120 CHAIN "LIST"', called('putImage'), [' ']);
 test('sample: LIST.BAS menu','10 SCREEN 0:CLS\n160 INPUT "Pick";N\n170 IF N=0 THEN CLS:END\n180 IF N=1 THEN CHAIN "PSET"\n290 GOTO 10', noerr, ['0']);
+test('sample: HBD.BAS', '20 SCREEN 0:CLS\n60 PLAY "T120 O4 L8 G G L4 A G > C < B2"\n70 PLAY "L8 G G L4 A G > D C2 <"\n80 PLAY "L8 G G L4 > G E C < B A"\n90 PLAY "L8 > F F L4 E C D C2"\n110 A$=INPUT$(1)\n120 CHAIN "LIST"', noerr, [' ']);
 
 // ── runner ───────────────────────────────────────────────────────────────────
 (async () => {

@@ -9,6 +9,7 @@ class Terminal {
     this.screen = screen;
     this._buf = [];        // keys waiting to be consumed (INKEY$ / INPUT$)
     this._waiters = [];    // pending nextKey() resolvers
+    this._trapBuf = [];    // function-key numbers (F1..F12 -> 1..12) for ON KEY trapping
     this._onKey = this._onKey.bind(this);
   }
 
@@ -16,6 +17,8 @@ class Terminal {
   detach() { window.removeEventListener('keydown', this._onKey); }
 
   _onKey(e) {
+    const fk = /^F([1-9]|1[0-2])$/.exec(e.key);   // function keys → ON KEY trap buffer (not INKEY$)
+    if (fk) { e.preventDefault(); this._trapBuf.push(parseInt(fk[1], 10)); return; }
     let ch = null;
     if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) ch = e.key;
     else if (e.key === 'Enter') ch = '\r';
@@ -36,6 +39,7 @@ class Terminal {
 
   inkey() { return this._buf.length ? this._buf.shift() : ''; } // INKEY$
   async inputKey() { return this.nextKey(); }                   // INPUT$(1)
+  nextTrap() { return this._trapBuf.length ? this._trapBuf.shift() : 0; } // ON KEY: next trapped F-key #
 
   // Interrupt any pending nextKey() waiter and future reads with an escape signal.
   abort() {

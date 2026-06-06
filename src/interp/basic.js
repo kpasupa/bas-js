@@ -113,6 +113,13 @@ function parseStatement(c) {
       case 'ON': {
         c.next();
         if (kw(c.peek(), 'ERROR')) { c.next(); if (kw(c.peek(), 'GOTO')) c.next(); return { t: 'onerror', line: c.next().v }; } // ON ERROR GOTO n (0 disables)
+        const evt = c.peek();
+        if (evt && evt.k === 'id' && /^(KEY|TIMER|COM|PEN|PLAY|STRIG)$/.test(evt.v.toUpperCase())) {  // ON KEY/TIMER(n) GOSUB line
+          const ev = c.next().v.toUpperCase(); let n = null;
+          if (c.peek() && c.peek().k === 'lp') { c.next(); n = parseExpr(c); if (c.peek() && c.peek().k === 'rp') c.next(); }
+          if (kw(c.peek(), 'GOSUB')) c.next();
+          return { t: 'ontrap', ev, n, line: c.next().v };
+        }
         const e = parseExpr(c); const verb = c.next(); const gosub = !!verb && verb.v && verb.v.toUpperCase() === 'GOSUB'; const lines = [c.next().v]; while (!c.eof() && c.peek().k === 'comma') { c.next(); lines.push(c.next().v); } return { t: 'on', expr: e, lines, gosub };
       }
       case 'ERROR': { c.next(); return { t: 'raiseerror', code: parseExpr(c) }; }
@@ -174,11 +181,18 @@ function parseStatement(c) {
         }
         return { t: 'deftype', ty, ranges };
       }
-      case 'WIDTH': case 'KEY': c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' };
+      case 'WIDTH': c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' };
+      case 'KEY': {
+        c.next();
+        if (c.peek() && c.peek().k === 'lp') { c.next(); const n = parseExpr(c); if (c.peek() && c.peek().k === 'rp') c.next(); return { t: 'trapstate', ev: 'KEY', n, state: (c.next().v || '').toUpperCase() }; } // KEY(n) ON/OFF/STOP
+        while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' };  // KEY ON/OFF (soft-key line) / KEY n,str$ — no-op
+      }
+      case 'TIMER': { c.next(); const t = c.peek(); if (t && t.k === 'id' && /^(ON|OFF|STOP)$/i.test(t.v)) { c.next(); return { t: 'trapstate', ev: 'TIMER', n: null, state: t.v.toUpperCase() }; } while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' }; }
+      case 'STRIG': case 'PEN': case 'COM': c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' };  // hardware traps — accepted, inert
       case 'TRON': c.next(); return { t: 'tron', on: true };
       case 'TROFF': c.next(); return { t: 'tron', on: false };
       case 'SOUND': { c.next(); const freq = parseExpr(c); if (c.peek() && c.peek().k === 'comma') c.next(); const dur = parseExpr(c); return { t: 'sound', freq, dur }; }
-      case 'PLAY': { c.next(); return { t: 'play', str: parseExpr(c) }; }
+      case 'PLAY': { c.next(); const t = c.peek(); if (t && t.k === 'id' && /^(ON|OFF|STOP)$/i.test(t.v)) { c.next(); return { t: 'rem' }; } return { t: 'play', str: parseExpr(c) }; } // PLAY ON/OFF (trap) inert; else music
       case 'DRAW': { c.next(); return { t: 'draw', str: parseExpr(c) }; }
       case 'SCREEN': { c.next(); const mode = parseExpr(c); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'gscreen', mode }; }
       case 'PSET': case 'PRESET': { const preset = w === 'PRESET'; c.next(); const p = parseCoord(c); let color = null; if (c.peek() && c.peek().k === 'comma') { c.next(); color = parseExpr(c); } return { t: 'pset', preset, x: p.x, y: p.y, step: p.step, color }; }
@@ -423,7 +437,24 @@ const DEF2SUF = { int: '%', str: '$', dbl: '#', sng: '!' };
 
 // ── interpreter ───────────────────────────────────────────────────────────────
 class Basic {
-  constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.arrays = {}; this.optionBase = 0; this.defType = {}; this.fns = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.commonArrs = new Set(); this.onPrintReady = null; this.audio = null; this.gfx = null; this.rndState = 0x2545f4914f6cdd1d & 0xffffffff; this.rndLast = 0; this.onErrorLine = 0; this.errCode = 0; this.errLineNo = 0; this.errIp = 0; this.trace = false; }
+  constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.arrays = {}; this.optionBase = 0; this.defType = {}; this.fns = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.commonArrs = new Set(); this.onPrintReady = null; this.audio = null; this.gfx = null; this.rndState = 0x2545f4914f6cdd1d & 0xffffffff; this.rndLast = 0; this.onErrorLine = 0; this.errCode = 0; this.errLineNo = 0; this.errIp = 0; this.trace = false;
+    this.trapKey = {}; this.trapKeyState = {}; this.timerLine = 0; this.timerSec = 0; this.timerState = 'OFF'; this.timerLast = 0; this.inTrap = false; this.anyTrapOn = false; }
+
+  _now() { return (typeof performance !== 'undefined' ? performance.now() : Date.now()); } // overridable in tests
+  _updateTrapFlag() { this.anyTrapOn = this.timerState === 'ON' || Object.keys(this.trapKeyState).some((k) => this.trapKeyState[k] === 'ON'); }
+  // Called between statements (top level only) when a trap is armed: returns a handler line to
+  // implicit-GOSUB, or 0. TIMER fires every n seconds; ON KEY(n) fires on a trapped function key.
+  _checkTraps() {
+    if (this.timerState === 'ON' && this.timerSec > 0) {
+      const now = this._now();
+      if (now - this.timerLast >= this.timerSec * 1000) { this.timerLast = now; return this.timerLine; }
+    }
+    if (this.term && this.term.nextTrap) {
+      let k;
+      while ((k = this.term.nextTrap()) !== 0) if (this.trapKeyState[k] === 'ON' && this.trapKey[k]) return this.trapKey[k];
+    }
+    return 0;
+  }
 
   // Seedable PRNG (mulberry32) behind RND. Fixed default seed → same sequence every run, as
   // GW-BASIC; RANDOMIZE / RND(neg) reseed it. rndLast lets RND(0) repeat the previous value.
@@ -586,6 +617,16 @@ class Basic {
       case 'optionbase': this.optionBase = num(st.n); return null;
       case 'deftype': { for (const [lo, hi] of st.ranges) for (let ch = lo.charCodeAt(0); ch <= hi.charCodeAt(0); ch++) this.defType[String.fromCharCode(ch)] = st.ty; return null; }
       case 'tron': this.trace = st.on; return null;
+      case 'ontrap': {
+        if (st.ev === 'TIMER') { this.timerLine = st.line; const s = this.evlS(st.n); if (s === _S) return _S; this.timerSec = num(s); }
+        else if (st.ev === 'KEY') { const k = this.evlS(st.n); if (k === _S) return _S; const kn = num(k); this.trapKey[kn] = st.line; if (!(kn in this.trapKeyState)) this.trapKeyState[kn] = 'OFF'; }
+        return null;                                               // COM/PEN/PLAY/STRIG: registered but inert (no hardware)
+      }
+      case 'trapstate': {
+        if (st.ev === 'TIMER') { this.timerState = st.state; if (st.state === 'ON') this.timerLast = this._now(); }
+        else if (st.ev === 'KEY') { const k = this.evlS(st.n); if (k === _S) return _S; this.trapKeyState[num(k)] = st.state; }
+        this._updateTrapFlag(); return null;
+      }
       case 'onerror': this.onErrorLine = st.line; return null;     // 0 disables (re-enables default stop)
       case 'raiseerror': { const code = num(this.evlS(st.code)); const e = new Error('BASIC error ' + code); e.basCode = code; throw e; }
       case 'resume': return { t: 'resume', mode: st.mode, line: st.line };
@@ -694,6 +735,17 @@ class Basic {
       // Keep the UI responsive on long synchronous scans: yield to the event loop every ~50ms
       // (only in the outer loop, not inside GOSUB recursions, to avoid extra overhead).
       if (!stopOnReturn && nowMs() - lastYield > 50) { await new Promise((r) => setTimeout(r)); lastYield = nowMs(); }
+      // Event traps (ON KEY / ON TIMER): between statements at top level, if armed, fire the
+      // handler as an implicit GOSUB (no re-entry while inside one).
+      if (!stopOnReturn && !this.inTrap && this.anyTrapOn) {
+        const tl = this._checkTraps();
+        if (tl) {
+          this.inTrap = true;
+          try { const tr = await this.run(this.go(tl), true); if (tr && (tr.t === 'end' || tr.t === 'system' || tr.t === 'chain')) return tr; }
+          finally { this.inTrap = false; }
+          continue;
+        }
+      }
       // TRON: print [line] as each new line is entered.
       if (this.trace && (ip === 0 || this.flatLines[ip] !== this.flatLines[ip - 1])) { this.s.put('[' + this.flatLines[ip] + ']'); this.s.render(); }
       // ON ERROR trap: if an error handler is armed, a thrown error jumps to it (recording ERR/ERL

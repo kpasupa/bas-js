@@ -49,8 +49,9 @@ class TestScreen {
 
 // ── minimal Terminal: feeds canned input lines/keys ──
 class TestTerm {
-  constructor(inputs){ this.q=(inputs||[]).slice(); }
+  constructor(inputs, traps){ this.q=(inputs||[]).slice(); this.traps=(traps||[]).slice(); }
   inkey(){ return ''; }
+  nextTrap(){ return this.traps.length ? this.traps.shift() : 0; }   // ON KEY trapped function-key #
   async inputKey(){ return this.q.length ? String(this.q.shift())[0] : ' '; }
   // mirror the real terminal: numeric INPUT yields a number, not a string
   async inputLine(opts){ const v = this.q.length ? this.q.shift() : ''; return (opts && (opts.type==='num'||opts.type==='int')) ? (parseFloat(v)||0) : v; }
@@ -58,13 +59,14 @@ class TestTerm {
 
 // run one program, return { screen, printer, error }. `files` seeds the in-memory FS (name→string).
 // `programs` (name→src) enables CHAIN: the run loop follows chain results like the real app.
-async function runProgram(src, inputs=[], files=null, programs=null){
+async function runProgram(src, inputs=[], files=null, programs=null, opts=null){
   window.__fs = {};
   if (files) for (const k in files) window.__fs[k] = Uint8Array.from(String(files[k]), c=>c.charCodeAt(0)&0xff);
   const scr = new TestScreen();
-  const term = new TestTerm(inputs);
+  const term = new TestTerm(inputs, opts && opts.traps);
   const loader = (name) => programs ? (programs[String(name).trim().toUpperCase()] ?? null) : null;
   const bas = new Basic(scr, term, loader);
+  if (opts && opts.now) bas._now = opts.now;     // injectable clock for ON TIMER tests
   // recording mocks for the device backends — verify the interpreter drives them correctly
   // (real audio/canvas can't be checked headless; the sample/untestable/*.BAS are for that).
   const rec = [];
@@ -100,7 +102,7 @@ const called = (name, ...args) => (r) => r.error ? ('ERR:'+r.error)
 
 // ── test registry ───────────────────────────────────────────────────────────
 const TESTS = [];
-function test(name, src, check, inputs, files, programs){ TESTS.push({ name, src, check, inputs, files, programs }); }
+function test(name, src, check, inputs, files, programs, opts){ TESTS.push({ name, src, check, inputs, files, programs, opts }); }
 // check(result) → true (pass) or string (fail reason). Helper: expect screen contains.
 const has = (sub) => (r) => r.error ? ('ERROR: '+r.error)
   : (r.screen.includes(sub) ? true : `screen lacks ${JSON.stringify(sub)} — got ${JSON.stringify(r.screen)}`);
@@ -209,6 +211,15 @@ test('err: untrapped throws', '10 ERROR 99', (r)=> r.error?true:`expected error,
 test('cur: POS after print','10 PRINT "AB";\n20 IF POS(0)=3 THEN PRINT "COLOK"', has('COLOK'));
 test('cur: POS after tab',  '10 PRINT TAB(7);\n20 IF POS(0)=7 THEN PRINT "TABOK"', has('TABOK'));
 test('cur: CSRLIN',         '10 LOCATE 10,5\n20 IF CSRLIN=10 THEN PRINT "ROWOK"', has('ROWOK'));
+test('trap: ON KEY GOSUB',
+  '10 ON KEY(1) GOSUB 100\n20 KEY(1) ON\n30 FOR I=1 TO 30:X=I:NEXT\n40 PRINT "F=";F\n50 END\n100 F=1:RETURN',
+  has('F= 1'), null, null, null, { traps:[1] });
+test('trap: KEY(1) OFF ignores',
+  '10 ON KEY(1) GOSUB 100\n20 KEY(1) OFF\n30 FOR I=1 TO 30:X=I:NEXT\n40 PRINT "F=";F\n50 END\n100 F=1:RETURN',
+  has('F= 0'), null, null, null, { traps:[1] });
+test('trap: ON TIMER GOSUB',
+  '10 ON TIMER(1) GOSUB 100\n20 TIMER ON\n30 FOR I=1 TO 80:X=I:NEXT\n40 IF F>=1 THEN PRINT "TICKED"\n50 END\n100 F=F+1:RETURN',
+  has('TICKED'), null, null, null, { now:(function(){let t=0;return ()=>{t+=300;return t;};})() });
 test('tron: trace lines',   '10 TRON\n20 PRINT "X"\n30 TROFF\n40 PRINT "Y"',
   (r)=> r.error?('ERR:'+r.error):((r.screen.includes('[20]')&&r.screen.includes('[30]')&&!r.screen.includes('[40]'))?true:`got ${JSON.stringify(r.screen)}`));
 test('reset: no open files','10 RESET\n20 PRINT "OK"', has('OK'));
@@ -269,7 +280,7 @@ test('menu: nav pattern',
   let pass=0, fail=0;
   for (const t of TESTS){
     let res;
-    try { res = await runProgram(t.src, t.inputs, t.files, t.programs); }
+    try { res = await runProgram(t.src, t.inputs, t.files, t.programs, t.opts); }
     catch(e){ res = { error: 'HARNESS: '+(e.message||e) }; }
     const v = t.check(res);
     if (v === true){ pass++; out.push('PASS  '+t.name); }

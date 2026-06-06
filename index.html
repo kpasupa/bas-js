@@ -24,7 +24,7 @@
   @keyframes blink { 50% { opacity: 0; } }
 
   /* ── gate overlay ── */
-  #gate { position: fixed; inset: 0; background: #000; overflow-y: auto;
+  #gate { position: fixed; inset: 0; background: #000; overflow-y: auto; z-index: 3;  /* above the graphics canvas (1) and text screen (2) */
           display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; gap: 0; }
   #gate h1 { color: #4ade80; font-size: 18px; letter-spacing: 2px; margin: 0 0 20px; }
 

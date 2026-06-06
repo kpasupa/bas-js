@@ -594,7 +594,7 @@ class Basic {
     switch (st.t) {
       case 'rem': return null;
       case 'common': this.commonVars = new Set(st.vars.map((v) => this.varKey(v))); this.commonArrs = new Set((st.arrs || []).map((v) => this.varKey(v))); return null;
-      case 'cls': if (this.gfx && this.gfx.active()) this.gfx.cls(); else this.s.cls(); return null;
+      case 'cls': if (this.gfx && this.gfx.active()) { this.gfx.cls(); this.s.clearTransparent(); } else this.s.cls(); return null;
       case 'beep': beep(); return null;
       case 'end': return { t: 'end' };
       case 'system': return { t: 'system' };
@@ -849,7 +849,7 @@ class Basic {
     switch (st.t) {
       case 'rem': return null;
       case 'common': this.commonVars = new Set(st.vars.map((v) => this.varKey(v))); this.commonArrs = new Set((st.arrs || []).map((v) => this.varKey(v))); return null; // declares vars that survive CHAIN
-      case 'cls': if (this.gfx && this.gfx.active()) this.gfx.cls(); else this.s.cls(); return null;
+      case 'cls': if (this.gfx && this.gfx.active()) { this.gfx.cls(); this.s.clearTransparent(); } else this.s.cls(); return null;
       case 'beep': beep(); return null;
       case 'end': return { t: 'end' };
       case 'system': return { t: 'system' };
@@ -916,7 +916,12 @@ class Basic {
       case 'clear': { this.vars = {}; this.arrays = {}; await this.closeFile(null); return null; } // reset state; size args no-op
       case 'sound': { const f = num(await this.evl(st.freq)), d = num(await this.evl(st.dur)); if (this.audio) await this.audio.sound(f, d); return null; }
       case 'play': { const s = String(await this.evl(st.str)); if (this.audio) await this.audio.play(s); return null; }
-      case 'gscreen': { if (this.gfx) this.gfx.screen(num(await this.evl(st.mode))); return null; }
+      case 'gscreen': {
+        const m = num(await this.evl(st.mode));
+        if (this.gfx) this.gfx.screen(m);
+        m === 0 ? this.s.cls() : this.s.clearTransparent();   // SCREEN clears; text grid transparent in graphics
+        return null;
+      }
       case 'pset': {
         if (!this.gfx) return null;
         let x = num(await this.evl(st.x)), y = num(await this.evl(st.y));

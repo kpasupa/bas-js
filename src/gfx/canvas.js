@@ -34,6 +34,7 @@ class Graphics {
     this.W = mode === 2 ? 640 : 320; this.H = 200;
     this.canvas.width = this.W; this.canvas.height = this.H;
     this.canvas.style.display = 'block'; this.ctx.imageSmoothingEnabled = false;
+    this._fit();                                          // pin to the text screen's content area
     this.buf = new Uint8Array(this.W * this.H);          // palette index per pixel
     this.img = this.ctx.createImageData(this.W, this.H); // RGBA mirror, blitted to the canvas
     if (mode === 2) { this.colors = [[0, 0, 0], [255, 255, 255]]; this.ncol = 2; this.fg = 1; }
@@ -42,6 +43,18 @@ class Graphics {
     this.cls();
   }
   active() { return this.mode !== 0; }
+  // Pin the canvas to the text screen's content box so graphics line up under the text cells.
+  _fit() {
+    if (typeof document === 'undefined') return;
+    const s = document.getElementById('screen'); if (!s) return;
+    const r = s.getBoundingClientRect(), cs = getComputedStyle(s);
+    const pl = parseFloat(cs.paddingLeft) || 0, pt = parseFloat(cs.paddingTop) || 0;
+    const pr = parseFloat(cs.paddingRight) || 0, pb = parseFloat(cs.paddingBottom) || 0;
+    this.canvas.style.left = (r.left + pl) + 'px';
+    this.canvas.style.top = (r.top + pt) + 'px';
+    this.canvas.style.width = (r.width - pl - pr) + 'px';
+    this.canvas.style.height = (r.height - pt - pb) + 'px';
+  }
   _ci(c) { c = c == null ? this.fg : c | 0; return ((c % this.ncol) + this.ncol) % this.ncol; } // wrap to mode's colour count
 
   // ── framebuffer ↔ canvas ──

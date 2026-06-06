@@ -32,6 +32,7 @@ window.listFiles     = async () => Object.keys(window.__fs).map(n=>n.toUpperCase
 class TestScreen {
   constructor(){ this.cls(); }
   cls(){ this.lines=[]; this.cur=''; this.col=1; this.row=1; }   // col/row 1-based, like real Screen
+  clearTransparent(){ this.cls(); }                              // graphics-mode CLS (transparent cells)
   color(){}
   render(){}
   _ensure(n){ while(this.cur.length<n) this.cur+=' '; }

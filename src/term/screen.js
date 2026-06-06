@@ -23,7 +23,17 @@ class Screen {
 
   cls() {
     this.cells = Array.from({ length: this.rows }, () =>
-      Array.from({ length: this.cols }, () => ({ ch: ' ', fg: this.fg, bg: this.bg })));
+      Array.from({ length: this.cols }, () => ({ ch: ' ', fg: this.fg, bg: this.bg, set: true })));
+    this.row = 1;
+    this.col = 1;
+    this.render();
+  }
+
+  // CLS for graphics mode: leave cells UNtouched (transparent) so the graphics canvas behind
+  // shows through. Printed cells then punch opaque boxes, exactly like GW-BASIC graphics text.
+  clearTransparent() {
+    this.cells = Array.from({ length: this.rows }, () =>
+      Array.from({ length: this.cols }, () => ({ ch: ' ', fg: this.fg, bg: this.bg, set: false })));
     this.row = 1;
     this.col = 1;
     this.render();
@@ -64,7 +74,7 @@ class Screen {
     for (const ch of String(str)) {
       if (ch === '\n') { this.newline(); continue; }
       if (this.col > this.cols) this.newline();
-      this.cells[this.row - 1][this.col - 1] = { ch, fg, bg: this.bg, blink };
+      this.cells[this.row - 1][this.col - 1] = { ch, fg, bg: this.bg, blink, set: true };
       this.col += 1;
     }
   }
@@ -86,7 +96,10 @@ class Screen {
       const flush = () => {
         if (!run) return;
         const cls = run.blink ? 'blink' : run.cursor ? 'cursor-blink' : '';
-        html += `<span style="color:${CGA[run.fg]};background:${CGA[run.bg]}"${cls ? ` class="${cls}"` : ''}>${run.text}</span>`;
+        // Untouched cells emit no background → transparent, so the graphics canvas (and in text
+        // mode, the black body) shows through. Touched cells (and the cursor) stay opaque.
+        const bgPart = run.set ? `;background:${CGA[run.bg]}` : '';
+        html += `<span style="color:${CGA[run.fg]}${bgPart}"${cls ? ` class="${cls}"` : ''}>${run.text}</span>`;
         run = null;
       };
       for (let c = 0; c < this.cols; c++) {
@@ -94,11 +107,12 @@ class Screen {
         const isCursor = this.cursorOn && r === this.row - 1 && c === this.col - 1;
         const fg = isCursor ? cell.bg : cell.fg;
         const bg = isCursor ? cell.fg : cell.bg;
+        const set = isCursor ? true : cell.set !== false;   // cursor opaque; legacy cells (no flag) opaque
         const blink = !!cell.blink;
         let ch = cell.ch;
         ch = ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch;
-        if (run && run.fg === fg && run.bg === bg && run.blink === blink && !isCursor && !run.cursor) run.text += ch;
-        else { flush(); run = { fg, bg, blink, cursor: isCursor, text: ch }; }
+        if (run && run.fg === fg && run.bg === bg && run.set === set && run.blink === blink && !isCursor && !run.cursor) run.text += ch;
+        else { flush(); run = { fg, bg, set, blink, cursor: isCursor, text: ch }; }
       }
       flush();
       out.push(html);

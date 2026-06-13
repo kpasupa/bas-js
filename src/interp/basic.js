@@ -28,11 +28,32 @@ function tokenize(src) {
   const t = []; let i = 0;
   const idStart = (c) => /[A-Za-z]/.test(c);
   const idChar = (c) => /[A-Za-z0-9._]/.test(c);
+  const signed16 = (n) => (n & 0x8000) ? n - 0x10000 : n;
   while (i < src.length) {
     const c = src[i];
     if (c === ' ' || c === '\t' || c === '\r' || c === '\n') { i++; continue; }
+    if (c === "'") break; // GW-BASIC apostrophe comment, equivalent to REM through EOL
     if (c === '"') { let j = i + 1, s = ''; while (j < src.length && src[j] !== '"') s += src[j++]; i = j + 1; t.push({ k: 'str', v: s }); continue; }
-    if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(src[i + 1] || ''))) { let j = i, n = ''; while (j < src.length && /[0-9.]/.test(src[j])) n += src[j++]; i = j; t.push({ k: 'num', v: parseFloat(n) }); continue; }
+    if (c === '&' && /[HhOo]/.test(src[i + 1] || '')) {
+      const base = /[Hh]/.test(src[i + 1]) ? 16 : 8;
+      const re = base === 16 ? /[0-9A-Fa-f]/ : /[0-7]/;
+      let j = i + 2, n = '';
+      while (j < src.length && re.test(src[j])) n += src[j++];
+      if (j < src.length && /[%!#]/.test(src[j])) j++;
+      i = j; t.push({ k: 'num', v: signed16(parseInt(n || '0', base) & 0xffff) }); continue;
+    }
+    if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(src[i + 1] || ''))) {
+      let j = i, n = '';
+      while (j < src.length && /[0-9]/.test(src[j])) n += src[j++];
+      if (src[j] === '.') { n += src[j++]; while (j < src.length && /[0-9]/.test(src[j])) n += src[j++]; }
+      if (/[EeDd]/.test(src[j] || '')) {
+        n += 'E'; j++;
+        if (/[+-]/.test(src[j] || '')) n += src[j++];
+        while (j < src.length && /[0-9]/.test(src[j])) n += src[j++];
+      }
+      if (j < src.length && /[%!#]/.test(src[j])) j++;
+      i = j; t.push({ k: 'num', v: parseFloat(n) }); continue;
+    }
     if (idStart(c)) { let j = i, id = ''; while (j < src.length && idChar(src[j])) id += src[j++]; if (j < src.length && '%!#$'.includes(src[j])) id += src[j++]; i = j; t.push({ k: 'id', v: id }); continue; }
     const two = src.substr(i, 2);
     if (two === '<=' || two === '>=' || two === '<>') { t.push({ k: 'op', v: two }); i += 2; continue; }
@@ -363,7 +384,11 @@ function pRel(c) { let l = pAdd(c); while (c.peek() && c.peek().k === 'op' && ['
 function pAdd(c) { let l = pMod(c); while (c.peek() && c.peek().k === 'op' && (c.peek().v === '+' || c.peek().v === '-')) { const op = c.next().v; l = { t: 'bin', op, l, r: pMod(c) }; } return l; }
 function pMod(c) { let l = pMul(c); while (kw(c.peek(), 'MOD')) { c.next(); l = { t: 'bin', op: 'MOD', l, r: pMul(c) }; } return l; }
 function pMul(c) { let l = pUnary(c); while (c.peek() && c.peek().k === 'op' && (c.peek().v === '*' || c.peek().v === '/')) { const op = c.next().v; l = { t: 'bin', op, l, r: pUnary(c) }; } return l; }
-function pUnary(c) { if (c.peek() && c.peek().k === 'op' && c.peek().v === '-') { c.next(); return { t: 'un', op: '-', e: pUnary(c) }; } return pPow(c); }
+function pUnary(c) {
+  if (c.peek() && c.peek().k === 'op' && c.peek().v === '+') { c.next(); return pUnary(c); }
+  if (c.peek() && c.peek().k === 'op' && c.peek().v === '-') { c.next(); return { t: 'un', op: '-', e: pUnary(c) }; }
+  return pPow(c);
+}
 // ^ binds tighter than unary minus (so -2^2 = -4), left-associative (2^3^2 = 64, as GW-BASIC),
 // and the exponent may carry a leading sign (2^-3 = .125).
 function pPow(c) {
@@ -920,7 +945,7 @@ class Basic {
         const m = num(await this.evl(st.mode));
         if (this.gfx) this.gfx.screen(m);
         if (m === 0) { this.s.gfx = null; this.s.color(7, 0); this.s.cls(); }      // back to text: default grey/black
-        else { this.s.gfx = this.gfx; this.s.color(m === 2 ? 1 : 3, 0); this.s.clearTransparent(); } // graphics: white text on bg 0, shared palette
+        else { this.s.gfx = this.gfx; this.s.color(m === 2 || m === 11 ? 1 : (m === 1 ? 3 : 15), 0); this.s.clearTransparent(); } // graphics: white text on bg 0, shared palette
         return null;
       }
       case 'pset': {

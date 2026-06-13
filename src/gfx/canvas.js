@@ -19,6 +19,22 @@ const SCR1_PAL = [
   [[0, 0, 0], [85, 255, 85], [255, 85, 85], [255, 255, 85]],    // palette 0: green / red / yellow
   [[0, 0, 0], [85, 255, 255], [255, 85, 255], [255, 255, 255]], // palette 1: cyan / magenta / white
 ];
+// Common BASICA/QuickBASIC graphics modes. Modes beyond GW-BASIC's CGA set are included so
+// old sample programs that pick EGA/VGA modes get the right coordinate space instead of clipping.
+const _mon = 4 / 3;
+const _aspect = (w, h) => _mon / (w / h);
+const SCREEN_PROFILES = {
+  1: { w: 320, h: 200, colors: 4, mono: false, displayAspect: _mon },
+  2: { w: 640, h: 200, colors: 2, mono: true, displayAspect: _mon },
+  7: { w: 320, h: 200, colors: 16, mono: false, displayAspect: _mon },
+  8: { w: 640, h: 200, colors: 16, mono: false, displayAspect: _mon },
+  9: { w: 640, h: 350, colors: 16, mono: false, displayAspect: _mon },
+  10: { w: 640, h: 350, colors: 4, mono: false, displayAspect: _mon },
+  11: { w: 640, h: 480, colors: 2, mono: true, displayAspect: _mon },
+  12: { w: 640, h: 480, colors: 16, mono: false, displayAspect: _mon },
+  13: { w: 320, h: 200, colors: 256, mono: false, displayAspect: _mon },
+};
+for (const p of Object.values(SCREEN_PROFILES)) p.circleAspect = _aspect(p.w, p.h);
 
 class Graphics {
   constructor(canvas) {
@@ -32,14 +48,17 @@ class Graphics {
   screen(mode) {
     this.mode = mode;
     if (mode === 0) { this.canvas.style.display = 'none'; return; }
-    this.W = mode === 2 ? 640 : 320; this.H = 200;
+    const p = SCREEN_PROFILES[mode] || SCREEN_PROFILES[1];
+    this.profile = p;
+    this.W = p.w; this.H = p.h;
     this.canvas.width = this.W; this.canvas.height = this.H;
     this.canvas.style.display = 'block'; this.ctx.imageSmoothingEnabled = false;
     this._fit();                                          // pin to the text screen's content area
     this.buf = new Uint8Array(this.W * this.H);          // palette index per pixel
     this.img = this.ctx.createImageData(this.W, this.H); // RGBA mirror, blitted to the canvas
-    if (mode === 2) { this.colors = [[0, 0, 0], [255, 255, 255]]; this.ncol = 2; this.fg = 1; }
-    else { this.colors = SCR1_PAL[1].slice(); this.ncol = 4; this.fg = 3; }
+    if (p.mono) { this.colors = [[0, 0, 0], [255, 255, 255]]; this.ncol = 2; this.fg = 1; }
+    else if (mode === 1) { this.colors = SCR1_PAL[1].slice(); this.ncol = 4; this.fg = 3; }
+    else { this.colors = CGA16.slice(); this.ncol = p.colors; this.fg = p.colors > 4 ? 15 : 3; }
     this.bg = 0; this.lastX = 0; this.lastY = 0; this.view = null; this.win = null;
     this.cls();
   }
@@ -51,10 +70,14 @@ class Graphics {
     const r = s.getBoundingClientRect(), cs = getComputedStyle(s);
     const pl = parseFloat(cs.paddingLeft) || 0, pt = parseFloat(cs.paddingTop) || 0;
     const pr = parseFloat(cs.paddingRight) || 0, pb = parseFloat(cs.paddingBottom) || 0;
-    this.canvas.style.left = (r.left + pl) + 'px';
-    this.canvas.style.top = (r.top + pt) + 'px';
-    this.canvas.style.width = (r.width - pl - pr) + 'px';
-    this.canvas.style.height = (r.height - pt - pb) + 'px';
+    const boxW = r.width - pl - pr, boxH = r.height - pt - pb;
+    const asp = this.profile?.displayAspect || (this.W / this.H);
+    let w = boxW, h = w / asp;
+    if (h > boxH) { h = boxH; w = h * asp; }
+    this.canvas.style.left = (r.left + pl + (boxW - w) / 2) + 'px';
+    this.canvas.style.top = (r.top + pt + (boxH - h) / 2) + 'px';
+    this.canvas.style.width = w + 'px';
+    this.canvas.style.height = h + 'px';
   }
   _ci(c) { c = c == null ? this.fg : c | 0; return ((c % this.ncol) + this.ncol) % this.ncol; } // wrap to mode's colour count
 
@@ -62,7 +85,7 @@ class Graphics {
   _put(x, y, c) {
     x = Math.round(x); y = Math.round(y);
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) return;
-    const ci = this._ci(c), i = y * this.W + x, o = i * 4, rgb = this.colors[ci];
+    const ci = this._ci(c), i = y * this.W + x, o = i * 4, rgb = this.colors[ci] || CGA16[ci & 15];
     this.buf[i] = ci; this.img.data[o] = rgb[0]; this.img.data[o + 1] = rgb[1]; this.img.data[o + 2] = rgb[2]; this.img.data[o + 3] = 255;
   }
   blit() { this.ctx.putImageData(this.img, 0, 0); }
@@ -109,11 +132,48 @@ class Graphics {
 
   // CIRCLE (x,y),r,color,start,end,aspect — parametric plot; arcs via start/end, ellipse via aspect.
   circle(x, y, r, c, start, end, aspect) {
-    const [cx, cy] = this._map(x, y), rx = Math.abs(r), ry = aspect != null ? Math.abs(r * aspect) : Math.abs(r);
+    const [cx, cy] = this._map(x, y), rx = Math.abs(r), ry = Math.abs(r * (aspect != null ? aspect : (this.profile?.circleAspect || 1)));
     const a0 = start != null ? start : 0, a1 = end != null ? end : Math.PI * 2;
-    const steps = Math.max(8, Math.round(Math.abs(a1 - a0) * Math.max(rx, ry) + 4));
-    for (let k = 0; k <= steps; k++) { const a = a0 + (a1 - a0) * k / steps; this._put(cx + rx * Math.cos(a), cy + ry * Math.sin(a), c); } // +sin: 0..π on the bottom (GW-BASIC)
+    const full = start == null && end == null;
+    if (full) {
+      this._ellipsePx(Math.round(cx), Math.round(cy), Math.round(rx), Math.max(1, Math.round(ry)), c);
+      this.blit(); this.lastX = x; this.lastY = y; return;
+    }
+    const steps = Math.max(16, Math.ceil(Math.abs(a1 - a0) * Math.max(rx, ry) * 1.5));
+    let px = null, py = null, firstX = null, firstY = null;
+    for (let k = 0; k <= steps; k++) {
+      const a = a0 + (a1 - a0) * k / steps;
+      const nx = cx + rx * Math.cos(a), ny = cy + ry * Math.sin(a); // +sin: 0..π on the bottom (GW-BASIC)
+      if (px == null) { firstX = nx; firstY = ny; this._put(nx, ny, c); }
+      else this._linePx(px, py, nx, ny, c);
+      px = nx; py = ny;
+    }
+    if (full && px != null) this._linePx(px, py, firstX, firstY, c);
     this.blit(); this.lastX = x; this.lastY = y;
+  }
+
+  _ellipsePx(cx, cy, rx, ry, c) {
+    const plot4 = (x, y) => {
+      this._put(cx + x, cy + y, c); this._put(cx - x, cy + y, c);
+      this._put(cx + x, cy - y, c); this._put(cx - x, cy - y, c);
+    };
+    let x = 0, y = ry;
+    const rx2 = rx * rx, ry2 = ry * ry;
+    let dx = 0, dy = 2 * rx2 * y;
+    let d1 = ry2 - rx2 * ry + 0.25 * rx2;
+    while (dx < dy) {
+      plot4(x, y);
+      x++; dx += 2 * ry2;
+      if (d1 < 0) d1 += dx + ry2;
+      else { y--; dy -= 2 * rx2; d1 += dx - dy + ry2; }
+    }
+    let d2 = ry2 * (x + 0.5) * (x + 0.5) + rx2 * (y - 1) * (y - 1) - rx2 * ry2;
+    while (y >= 0) {
+      plot4(x, y);
+      y--; dy -= 2 * rx2;
+      if (d2 > 0) d2 += rx2 - dy;
+      else { x++; dx += 2 * ry2; d2 += dx - dy + rx2; }
+    }
   }
 
   // PAINT (x,y),paint,border — scanline flood fill on the index buffer (exact, so airtight).

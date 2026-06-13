@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>bas-js</title>
 <style>
+
+
+  @font-face {
+    font-family: 'Courier MonoThai';
+    src: url('courmon.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    ascent-override: 94%;
+    descent-override: 47%;
+    size-adjust: 91.645%;
+  }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body { display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -72,7 +83,7 @@
   #esc-hint { position: fixed; bottom: 8px; right: 12px; font-size: 11px; color: #333;
               display: none; pointer-events: none; }
 
-  .thaifont span { font-family: 'Consolas','Menlo','Monaco','Tahoma','Leelawadee UI','Courier New',monospace; }
+  .thaifont span { font-family: 'Consolas','Menlo','Monaco','Courier MonoThai','Tahoma','Leelawadee UI','Courier New',monospace; }
 
   /* ── graphics canvas (SCREEN 1/2) — sits BEHIND the (transparent) text screen, pinned to its
         exact rectangle by JS, so text composites over graphics (untouched cells are see-through) ── */

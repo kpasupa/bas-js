@@ -34,7 +34,7 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
         // Normal END / ran off the end: hold the output on screen until a keypress, so
         // print-and-end programs (e.g. QUAD.BAS) aren't hidden by the gate the instant they finish.
         console.info(`[bas] ${prog}.BAS ended`);
-        s.color(7, 0); s.locate(25, 1); s.put('[ program ended — press any key ]'); s.render(); await term.inputKey(); break;
+        s.color(7, 0); s.locate(25, 1); s.put('[ program ended - press any key ]'); s.render(); await term.inputKey(); break;
       }
     }
   } catch (e) {

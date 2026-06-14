@@ -63,7 +63,9 @@ class Graphics {
     this.cls();
   }
   active() { return this.mode !== 0; }
-  // Pin the canvas to the text screen's content box so graphics line up under the text cells.
+  // Pin the canvas to the text screen's content box — fill the full box so the GFX
+  // background colour covers the entire screen area (no letterbox gaps).
+  // circleAspect is recomputed for the actual display pixel ratio so CIRCLE stays round.
   _fit() {
     if (typeof document === 'undefined') return;
     const s = document.getElementById('screen'); if (!s) return;
@@ -71,13 +73,12 @@ class Graphics {
     const pl = parseFloat(cs.paddingLeft) || 0, pt = parseFloat(cs.paddingTop) || 0;
     const pr = parseFloat(cs.paddingRight) || 0, pb = parseFloat(cs.paddingBottom) || 0;
     const boxW = r.width - pl - pr, boxH = r.height - pt - pb;
-    const asp = this.profile?.displayAspect || (this.W / this.H);
-    let w = boxW, h = w / asp;
-    if (h > boxH) { h = boxH; w = h * asp; }
-    this.canvas.style.left = (r.left + pl + (boxW - w) / 2) + 'px';
-    this.canvas.style.top = (r.top + pt + (boxH - h) / 2) + 'px';
-    this.canvas.style.width = w + 'px';
-    this.canvas.style.height = h + 'px';
+    this.canvas.style.left = (r.left + pl) + 'px';
+    this.canvas.style.top  = (r.top  + pt) + 'px';
+    this.canvas.style.width  = boxW + 'px';
+    this.canvas.style.height = boxH + 'px';
+    // pixel aspect ratio for the actual display: (css_px_per_gfx_col) / (css_px_per_gfx_row)
+    this._circleAspect = (boxW * this.H) / (boxH * this.W);
   }
   _ci(c) { c = c == null ? this.fg : c | 0; return ((c % this.ncol) + this.ncol) % this.ncol; } // wrap to mode's colour count
 
@@ -132,7 +133,7 @@ class Graphics {
 
   // CIRCLE (x,y),r,color,start,end,aspect — parametric plot; arcs via start/end, ellipse via aspect.
   circle(x, y, r, c, start, end, aspect) {
-    const [cx, cy] = this._map(x, y), rx = Math.abs(r), ry = Math.abs(r * (aspect != null ? aspect : (this.profile?.circleAspect || 1)));
+    const [cx, cy] = this._map(x, y), rx = Math.abs(r), ry = Math.abs(r * (aspect != null ? aspect : (this._circleAspect ?? this.profile?.circleAspect ?? 1)));
     const a0 = start != null ? start : 0, a1 = end != null ? end : Math.PI * 2;
     const full = start == null && end == null;
     if (full) {

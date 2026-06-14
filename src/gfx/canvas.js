@@ -47,7 +47,7 @@ class Graphics {
 
   screen(mode) {
     this.mode = mode;
-    if (mode === 0) { this.canvas.style.display = 'none'; return; }
+    if (mode === 0) { this.canvas.style.display = 'none'; this._updateScreenBg(); return; }
     const p = SCREEN_PROFILES[mode] || SCREEN_PROFILES[1];
     this.profile = p;
     this.W = p.w; this.H = p.h;
@@ -89,7 +89,15 @@ class Graphics {
     this.buf[i] = ci; this.img.data[o] = rgb[0]; this.img.data[o + 1] = rgb[1]; this.img.data[o + 2] = rgb[2]; this.img.data[o + 3] = 255;
   }
   blit() { this.ctx.putImageData(this.img, 0, 0); }
-  _repaintAll() { for (let i = 0; i < this.buf.length; i++) { const rgb = this.colors[this.buf[i]] || CGA16[0], o = i * 4; this.img.data[o] = rgb[0]; this.img.data[o + 1] = rgb[1]; this.img.data[o + 2] = rgb[2]; this.img.data[o + 3] = 255; } this.blit(); }
+  _repaintAll() { for (let i = 0; i < this.buf.length; i++) { const rgb = this.colors[this.buf[i]] || CGA16[0], o = i * 4; this.img.data[o] = rgb[0]; this.img.data[o + 1] = rgb[1]; this.img.data[o + 2] = rgb[2]; this.img.data[o + 3] = 255; } this.blit(); this._updateScreenBg(); }
+  // Keep #screen CSS background in sync with GFX color[0] so areas outside the canvas
+  // (aspect-ratio letterbox gaps) and transparent text cells both show the correct bg.
+  _updateScreenBg() {
+    const el = document.getElementById('screen'); if (!el) return;
+    if (!this.active()) { el.style.background = ''; return; }
+    const rgb = this.colors[0] || [0, 0, 0];
+    el.style.background = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+  }
 
   cls() { this.buf.fill(this._ci(this.bg)); this._repaintAll(); }
   // SCREEN 1: COLOR background[,palette]. SCREEN 2: COLOR foreground. PALETTE overrides one entry.

@@ -26,6 +26,7 @@
     background: transparent; color: #aaa; padding: 8px; margin: 0;
     white-space: pre; display: inline-block; position: relative; z-index: 2;
     width: 80ch; height: calc(25 * 1.15em); box-sizing: content-box;
+    flex-shrink: 0;
   }
   #screen span { display: inline; }
   .blink        { animation: blink 1s   steps(1) infinite; }
@@ -42,7 +43,7 @@
     background: #000; color: #aaa; padding: 8px; margin: 0;
     white-space: pre; display: inline-block;
     width: 80ch; height: calc(25 * 1.15em); box-sizing: content-box;
-    outline: none; overflow: hidden;
+    outline: none; overflow: hidden; flex-shrink: 0;
   }
   .gate-sel { background: #aaa; color: #000; }
   .gate-fk  { background: #aaa; color: #000; }

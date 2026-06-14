@@ -60,13 +60,14 @@
   <div id="gate"><pre id="gate-pre" class="thaifont" tabindex="0">Loading...</pre></div>
 
 <script>
-  const _scr = document.getElementById('screen');
-  const BASE_WIDTH  = Math.round(_scr.getBoundingClientRect().width);
-  const _titleBar   = window.outerHeight * (window.innerWidth / window.outerWidth) - window.innerHeight;
-  const BASE_HEIGHT = Math.ceil(_scr.getBoundingClientRect().height + _titleBar);
-  const BASE_DPR    = window.devicePixelRatio || 1;
+  const _scr   = document.getElementById('screen');
+  const _scrW  = Math.round(_scr.getBoundingClientRect().width);
+  const _scrH  = Math.round(_scr.getBoundingClientRect().height);
+  const BASE_W   = _scrW + (window.outerWidth  - window.innerWidth);
+  const BASE_H   = _scrH + (window.outerHeight - window.innerHeight);
+  const BASE_DPR = window.devicePixelRatio || 1;
   function getZoom() { return (window.devicePixelRatio || 1) / BASE_DPR; }
-  function fixSize() { const z = getZoom(); window.resizeTo(Math.round(BASE_WIDTH * z), Math.round(BASE_HEIGHT * z)); }
+  function fixSize() { const z = getZoom(); window.resizeTo(Math.round(BASE_W * z), Math.round(BASE_H * z)); }
   fixSize();
   window.addEventListener('resize', fixSize);
 </script>

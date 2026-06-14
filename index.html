@@ -61,27 +61,28 @@
   <div id="gate"><pre id="gate-pre" class="thaifont" tabindex="0">Loading...</pre></div>
 
 <script>
-  const _scr    = document.getElementById('screen');
-  const _WKEY   = 'bas-js-wsize';
-  const BASE_DPR = window.devicePixelRatio || 1;
+  const _scr  = document.getElementById('screen');
+  const _CKEY = 'bas-js-chrome';
 
-  // Restore immediately from last known good size — prevents Ctrl+R shrink caused
-  // by Chrome reporting outerHeight - innerHeight = 0 during page reload.
-  const _saved = JSON.parse(localStorage.getItem(_WKEY) || 'null');
-  if (_saved) window.resizeTo(_saved.w, _saved.h);
-
-  // Measure after restore so chrome dims are stable.
+  // Chrome border/titlebar in PHYSICAL pixels — stable across zoom and monitor changes.
+  // On Ctrl+R, Chrome reports outerH - innerH = 0 (unreliable), so fall back to stored value.
+  const _dpr  = window.devicePixelRatio || 1;
+  const _rawW = window.outerWidth  - window.innerWidth;
+  const _rawH = window.outerHeight - window.innerHeight;
+  const _st   = JSON.parse(localStorage.getItem(_CKEY) || 'null');
+  const _phW  = _rawH > 5 ? Math.round(_rawW * _dpr) : (_st?.pw ?? 0);
+  const _phH  = _rawH > 5 ? Math.round(_rawH * _dpr) : (_st?.ph ?? 56);
   const _scrW = Math.round(_scr.getBoundingClientRect().width);
   const _scrH = Math.round(_scr.getBoundingClientRect().height);
-  const BASE_W  = _scrW + (window.outerWidth  - window.innerWidth);
-  const BASE_H  = _scrH + (window.outerHeight - window.innerHeight);
 
-  function getZoom() { return (window.devicePixelRatio || 1) / BASE_DPR; }
+  // resizeTo is in CSS px; dividing physical chrome by current DPR converts correctly
+  // for any zoom level or monitor DPR — no getZoom() multiplier needed.
   function fixSize() {
-    const z = getZoom();
-    const w = Math.round(BASE_W * z), h = Math.round(BASE_H * z);
-    window.resizeTo(w, h);
-    localStorage.setItem(_WKEY, JSON.stringify({ w, h }));
+    const d = window.devicePixelRatio || 1;
+    window.resizeTo(_scrW + Math.round(_phW / d), _scrH + Math.round(_phH / d));
+    const mW = (window.outerWidth  - window.innerWidth)  * d;
+    const mH = (window.outerHeight - window.innerHeight) * d;
+    if (mH > 5) localStorage.setItem(_CKEY, JSON.stringify({ pw: Math.round(mW), ph: Math.round(mH) }));
   }
   fixSize();
   window.addEventListener('resize', fixSize);

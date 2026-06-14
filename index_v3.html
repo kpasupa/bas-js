@@ -65,26 +65,24 @@
   const _SKEY = 'bas-js-size';
   const _st   = JSON.parse(localStorage.getItem(_SKEY) || 'null');
   if (_st) window.resizeTo(_st.w, _st.h);
-  const BASE_DPR = _st?.bd ?? (window.devicePixelRatio || 1);
-  function getZoom() { return (window.devicePixelRatio || 1) / BASE_DPR; }
-  const _z    = getZoom();
-  const _scrW = Math.round(_scr.getBoundingClientRect().width);
-  const _scrH = Math.round(_scr.getBoundingClientRect().height);
-  const _rCH = window.outerHeight - window.innerHeight;
-  const _rCW = window.outerWidth  - window.innerWidth;
-  const _cH  = _rCH > 5 ? Math.round(_rCH * _z) : (_st?.ch ?? 45);
-  const _cW  = _rCH > 5 ? Math.round(_rCW * _z) : (_st?.cw ?? 0);
+  const _dpr   = window.devicePixelRatio || 1;
+  const _scrW  = Math.round(_scr.getBoundingClientRect().width);
+  const _scrH  = Math.round(_scr.getBoundingClientRect().height);
+  const _rawCH = window.outerHeight - window.innerHeight;
+  const _rawCW = window.outerWidth  - window.innerWidth;
+  const _phH = _rawCH > 5 ? Math.round(_rawCH * _dpr) : (_st?.ph ?? 0);
+  const _phW = _rawCH > 5 ? Math.round(_rawCW * _dpr) : (_st?.pw ?? 0);
   function fixSize() {
-    const z = getZoom();
-    const w = Math.round(_scrW * z) + _cW;
-    const h = Math.round(_scrH * z) + _cH;
+    const d = window.devicePixelRatio || 1;
+    const w = _scrW + Math.round(_phW / d);
+    const h = _scrH + Math.round(_phH / d);
     window.resizeTo(w, h);
-    const mCH = (window.outerHeight - window.innerHeight) * z;
-    const mCW = (window.outerWidth  - window.innerWidth)  * z;
+    const mH = (window.outerHeight - window.innerHeight) * d;
+    const mW = (window.outerWidth  - window.innerWidth)  * d;
     localStorage.setItem(_SKEY, JSON.stringify({
-      w, h, bd: BASE_DPR,
-      ch: mCH > 5 ? Math.round(mCH) : _cH,
-      cw: mCH > 5 ? Math.round(mCW) : _cW,
+      w, h,
+      ph: mH > 5 ? Math.round(mH) : _phH,
+      pw: mH > 5 ? Math.round(mW) : _phW,
     }));
   }
   fixSize();

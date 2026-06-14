@@ -65,33 +65,33 @@
   const _SKEY = 'bas-js-size';
   const _st   = JSON.parse(localStorage.getItem(_SKEY) || 'null');
 
-  // Restore immediately to stabilise window before measuring (Ctrl+R / bat reopen).
+  // Restore immediately — handles Ctrl+R where outerW/H = 0 during reload.
   if (_st) window.resizeTo(_st.w, _st.h);
 
-  const _dpr   = window.devicePixelRatio || 1;
-  const _scrW  = Math.round(_scr.getBoundingClientRect().width);
-  const _scrH  = Math.round(_scr.getBoundingClientRect().height);
-  const _rawCH = window.outerHeight - window.innerHeight;
-  const _rawCW = window.outerWidth  - window.innerWidth;
+  const _scrW = Math.round(_scr.getBoundingClientRect().width);
+  const _scrH = Math.round(_scr.getBoundingClientRect().height);
 
-  // Chrome size in physical px (= CSS px × DPR) — invariant across zoom changes.
-  // Stored as fallback for Ctrl+R where Chrome reports outerH-innerH = 0.
-  // resizeTo is in CSS px; divide by current DPR to convert back on each call.
-  const _phH = _rawCH > 5 ? Math.round(_rawCH * _dpr) : (_st?.ph ?? 0);
-  const _phW = _rawCH > 5 ? Math.round(_rawCW * _dpr) : (_st?.pw ?? 0);
+  // outerH is physical/OS-scale (not page-zoom-scaled).
+  // innerH is physical-viewport / DPR (page-zoom-scaled).
+  // outerH − innerH × DPR = actual physical chrome px, constant across any zoom.
+  function _measureCp() {
+    const dpr = window.devicePixelRatio || 1;
+    const oW = window.outerWidth, oH = window.outerHeight;
+    if (oW < 5 || oH < 5) return null;
+    return { w: Math.round(oW - window.innerWidth * dpr),
+             h: Math.round(oH - window.innerHeight * dpr) };
+  }
+
+  let _cp = _measureCp() ?? { w: _st?.cpw ?? 0, h: _st?.cph ?? 0 };
 
   function fixSize() {
-    const d = window.devicePixelRatio || 1;
-    const w = _scrW + Math.round(_phW / d);
-    const h = _scrH + Math.round(_phH / d);
+    const dpr = window.devicePixelRatio || 1;
+    const m = _measureCp();
+    if (m) _cp = m;
+    const w = Math.round(_cp.w + _scrW * dpr);
+    const h = Math.round(_cp.h + _scrH * dpr);
     window.resizeTo(w, h);
-    const mH = (window.outerHeight - window.innerHeight) * d;
-    const mW = (window.outerWidth  - window.innerWidth)  * d;
-    localStorage.setItem(_SKEY, JSON.stringify({
-      w, h,
-      ph: mH > 5 ? Math.round(mH) : _phH,
-      pw: mH > 5 ? Math.round(mW) : _phW,
-    }));
+    localStorage.setItem(_SKEY, JSON.stringify({ w, h, cpw: _cp.w, cph: _cp.h }));
   }
   fixSize();
   window.addEventListener('resize', fixSize);
@@ -314,7 +314,7 @@
     const lines = [];
 
     // lines 1-4: header
-    lines.push(hesc('bas-js 1.3.3'));
+    lines.push(hesc('bas-js 1.3.9'));
     lines.push(hesc('(C) Copyright KRIT PASUPA'));
     lines.push(hesc('github.com/kpasupa'));
     lines.push('');

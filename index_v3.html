@@ -61,14 +61,25 @@
   <div id="gate"><pre id="gate-pre" class="thaifont" tabindex="0">Loading...</pre></div>
 
 <script>
-  const _scr   = document.getElementById('screen');
-  const _scrW  = Math.round(_scr.getBoundingClientRect().width);
-  const _scrH  = Math.round(_scr.getBoundingClientRect().height);
-  const BASE_W   = _scrW + (window.outerWidth  - window.innerWidth);
-  const BASE_H   = _scrH + (window.outerHeight - window.innerHeight);
+  const _scr    = document.getElementById('screen');
+  const _WKEY   = 'bas-js-wsize';
   const BASE_DPR = window.devicePixelRatio || 1;
+
+  const _saved = JSON.parse(localStorage.getItem(_WKEY) || 'null');
+  if (_saved) window.resizeTo(_saved.w, _saved.h);
+
+  const _scrW = Math.round(_scr.getBoundingClientRect().width);
+  const _scrH = Math.round(_scr.getBoundingClientRect().height);
+  const BASE_W  = _scrW + (window.outerWidth  - window.innerWidth);
+  const BASE_H  = _scrH + (window.outerHeight - window.innerHeight);
+
   function getZoom() { return (window.devicePixelRatio || 1) / BASE_DPR; }
-  function fixSize() { const z = getZoom(); window.resizeTo(Math.round(BASE_W * z), Math.round(BASE_H * z)); }
+  function fixSize() {
+    const z = getZoom();
+    const w = Math.round(BASE_W * z), h = Math.round(BASE_H * z);
+    window.resizeTo(w, h);
+    localStorage.setItem(_WKEY, JSON.stringify({ w, h }));
+  }
   fixSize();
   window.addEventListener('resize', fixSize);
 </script>

@@ -17,13 +17,39 @@ class Terminal {
   detach() { window.removeEventListener('keydown', this._onKey); }
 
   _onKey(e) {
-    const fk = /^F([1-9]|1[0-2])$/.exec(e.key);   // function keys → ON KEY trap buffer (not INKEY$)
-    if (fk) { e.preventDefault(); this._trapBuf.push(parseInt(fk[1], 10)); return; }
+    // Ctrl+C / Ctrl+Break → abort running program (GW-BASIC Ctrl+Break equivalent)
+    if (e.key === 'Pause' || (e.ctrlKey && (e.key === 'c' || e.key === 'C' || e.key === 'Break' || e.keyCode === 67 || e.keyCode === 19))) {
+      e.preventDefault();
+      this.abort();
+      return;
+    }
+    const fk = /^F([1-9]|1[0-2])$/.exec(e.key);
+    if (fk) {
+      e.preventDefault();
+      const n = parseInt(fk[1], 10);
+      this._trapBuf.push(n);
+      if (n >= 1 && n <= 10) {                              // F1=CHR$(59)..F10=CHR$(68)
+        const ch = '\x00' + String.fromCharCode(58 + n);
+        if (this._waiters.length) this._waiters.shift()(ch); else this._buf.push(ch);
+      }
+      return;
+    }
     let ch = null;
     if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) ch = e.key;
-    else if (e.key === 'Enter') ch = '\r';
-    else if (e.key === 'Backspace') ch = '\b';
-    else if (e.key === 'Escape') ch = '\x1b';
+    else if (e.key === 'Enter')      ch = '\r';
+    else if (e.key === 'Backspace')  ch = '\b';
+    else if (e.key === 'Tab')        ch = '\t';              // CHR$(9)
+    else if (e.key === 'Escape')     ch = '\x1b';            // CHR$(27)
+    else if (e.key === 'ArrowUp')    ch = '\x00H';           // CHR$(0)+CHR$(72)
+    else if (e.key === 'ArrowDown')  ch = '\x00P';           // CHR$(0)+CHR$(80)
+    else if (e.key === 'ArrowLeft')  ch = e.ctrlKey ? '\x00s' : '\x00K';   // CHR$(115) / CHR$(75)
+    else if (e.key === 'ArrowRight') ch = e.ctrlKey ? '\x00t' : '\x00M';   // CHR$(116) / CHR$(77)
+    else if (e.key === 'Home')       ch = e.ctrlKey ? '\x00w' : '\x00G';   // CHR$(119) / CHR$(71)
+    else if (e.key === 'End')        ch = e.ctrlKey ? '\x00u' : '\x00O';   // CHR$(117) / CHR$(79)
+    else if (e.key === 'PageUp')     ch = e.ctrlKey ? '\x00\x84' : '\x00I'; // CHR$(132) / CHR$(73)
+    else if (e.key === 'PageDown')   ch = e.ctrlKey ? '\x00v' : '\x00Q';   // CHR$(118) / CHR$(81)
+    else if (e.key === 'Insert')     ch = '\x00R';           // CHR$(0)+CHR$(82)
+    else if (e.key === 'Delete')     ch = '\x00S';           // CHR$(0)+CHR$(83)
     if (ch === null) return;
     e.preventDefault();
     if (this._waiters.length) this._waiters.shift()(ch);
@@ -37,7 +63,10 @@ class Terminal {
     });
   }
 
-  inkey() { return this._buf.length ? this._buf.shift() : ''; } // INKEY$
+  inkey() {                                                      // INKEY$
+    if (this._aborted) throw Object.assign(new Error('ESC'), { name: 'EscapeError' });
+    return this._buf.length ? this._buf.shift() : '';
+  }
   async inputKey() { return this.nextKey(); }                   // INPUT$(1)
   nextTrap() { return this._trapBuf.length ? this._trapBuf.shift() : 0; } // ON KEY: next trapped F-key #
 

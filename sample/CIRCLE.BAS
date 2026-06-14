@@ -1,0 +1,12 @@
+10 RANDOMIZE TIMER
+20 CLS
+30 SCREEN 9 1 640x350
+40 INPUT "Enter the radius of the circle: ", R
+50 IF R <= 0 THEN PRINT "Radius must be positive!": END
+60 X = 320
+70 Y = 175
+80 FOR R=10 TO 200 STEP 10
+90 RCOLOR = INT(RND * 16)
+100 CIRCLE (X,Y), R, RCOLOR
+110 NEXT R
+120 END

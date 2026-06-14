@@ -62,27 +62,41 @@
 
 <script>
   const _scr  = document.getElementById('screen');
-  const _CKEY = 'bas-js-chrome';
+  const _SKEY = 'bas-js-size';
+  const _st   = JSON.parse(localStorage.getItem(_SKEY) || 'null');
 
-  // Chrome border/titlebar in PHYSICAL pixels — stable across zoom and monitor changes.
-  // On Ctrl+R, Chrome reports outerH - innerH = 0 (unreliable), so fall back to stored value.
-  const _dpr  = window.devicePixelRatio || 1;
-  const _rawW = window.outerWidth  - window.innerWidth;
-  const _rawH = window.outerHeight - window.innerHeight;
-  const _st   = JSON.parse(localStorage.getItem(_CKEY) || 'null');
-  const _phW  = _rawH > 5 ? Math.round(_rawW * _dpr) : (_st?.pw ?? 0);
-  const _phH  = _rawH > 5 ? Math.round(_rawH * _dpr) : (_st?.ph ?? 56);
+  // Restore saved target immediately — stabilises window before any measurement.
+  if (_st) window.resizeTo(_st.w, _st.h);
+
+  // BASE_DPR = Windows display scale (DPR at Chrome zoom 100%).
+  // Must be stored: when Chrome reopens at a remembered zoom, devicePixelRatio already
+  // includes the zoom factor, so getZoom() would return 1 without the stored baseline.
+  const BASE_DPR = _st?.bd ?? (window.devicePixelRatio || 1);
+  function getZoom() { return (window.devicePixelRatio || 1) / BASE_DPR; }
+
+  const _z    = getZoom();
   const _scrW = Math.round(_scr.getBoundingClientRect().width);
   const _scrH = Math.round(_scr.getBoundingClientRect().height);
 
-  // resizeTo is in CSS px; dividing physical chrome by current DPR converts correctly
-  // for any zoom level or monitor DPR — no getZoom() multiplier needed.
+  // Chrome titlebar in device-independent px (= CSS px × chromeZoom) — invariant
+  // across zoom changes. Stored as fallback for Ctrl+R where outerH-innerH = 0.
+  const _rCH = window.outerHeight - window.innerHeight;
+  const _rCW = window.outerWidth  - window.innerWidth;
+  const _cH  = _rCH > 5 ? Math.round(_rCH * _z) : (_st?.ch ?? 45);
+  const _cW  = _rCH > 5 ? Math.round(_rCW * _z) : (_st?.cw ?? 0);
+
   function fixSize() {
-    const d = window.devicePixelRatio || 1;
-    window.resizeTo(_scrW + Math.round(_phW / d), _scrH + Math.round(_phH / d));
-    const mW = (window.outerWidth  - window.innerWidth)  * d;
-    const mH = (window.outerHeight - window.innerHeight) * d;
-    if (mH > 5) localStorage.setItem(_CKEY, JSON.stringify({ pw: Math.round(mW), ph: Math.round(mH) }));
+    const z = getZoom();
+    const w = Math.round(_scrW * z) + _cW;
+    const h = Math.round(_scrH * z) + _cH;
+    window.resizeTo(w, h);
+    const mCH = (window.outerHeight - window.innerHeight) * z;
+    const mCW = (window.outerWidth  - window.innerWidth)  * z;
+    localStorage.setItem(_SKEY, JSON.stringify({
+      w, h, bd: BASE_DPR,
+      ch: mCH > 5 ? Math.round(mCH) : _cH,
+      cw: mCH > 5 ? Math.round(mCW) : _cW,
+    }));
   }
   fixSize();
   window.addEventListener('resize', fixSize);

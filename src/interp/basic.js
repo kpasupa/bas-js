@@ -57,7 +57,7 @@ function tokenize(src) {
     if (idStart(c)) { let j = i, id = ''; while (j < src.length && idChar(src[j])) id += src[j++]; if (j < src.length && '%!#$'.includes(src[j])) id += src[j++]; i = j; t.push({ k: 'id', v: id }); continue; }
     const two = src.substr(i, 2);
     if (two === '<=' || two === '>=' || two === '<>') { t.push({ k: 'op', v: two }); i += 2; continue; }
-    if ('=<>+-*/^'.includes(c)) { t.push({ k: 'op', v: c }); i++; continue; }
+    if ('=<>+-*/^\\'.includes(c)) { t.push({ k: 'op', v: c }); i++; continue; }
     if (c === '(') { t.push({ k: 'lp' }); i++; continue; }
     if (c === ')') { t.push({ k: 'rp' }); i++; continue; }
     if (c === ',') { t.push({ k: 'comma' }); i++; continue; }
@@ -181,6 +181,10 @@ function parseStatement(c) {
       case 'ERASE': { c.next(); const names = [c.next().v]; while (!c.eof() && c.peek().k === 'comma') { c.next(); names.push(c.next().v); } return { t: 'erase', names }; }
       case 'DEF': {
         c.next();
+        if (kw(c.peek(), 'SEG') || kw(c.peek(), 'USR')) { // DEF SEG / DEF USR — no-op
+          c.next(); if (c.peek() && c.peek().k === 'op' && c.peek().v === '=') { c.next(); parseExpr(c); }
+          return { t: 'rem' };
+        }
         let fname = c.next().v.toUpperCase();               // FNxxx  (or "FN" then the name, if spaced)
         if (fname === 'FN' && c.peek() && c.peek().k === 'id') fname = 'FN' + c.next().v.toUpperCase();
         let params = [];
@@ -382,7 +386,8 @@ function pAnd(c) { let l = pNot(c); while (kw(c.peek(), 'AND')) { c.next(); l = 
 function pNot(c) { if (kw(c.peek(), 'NOT')) { c.next(); return { t: 'un', op: 'NOT', e: pNot(c) }; } return pRel(c); }
 function pRel(c) { let l = pAdd(c); while (c.peek() && c.peek().k === 'op' && ['=', '<>', '<', '>', '<=', '>='].includes(c.peek().v)) { const op = c.next().v; l = { t: 'bin', op, l, r: pAdd(c) }; } return l; }
 function pAdd(c) { let l = pMod(c); while (c.peek() && c.peek().k === 'op' && (c.peek().v === '+' || c.peek().v === '-')) { const op = c.next().v; l = { t: 'bin', op, l, r: pMod(c) }; } return l; }
-function pMod(c) { let l = pMul(c); while (kw(c.peek(), 'MOD')) { c.next(); l = { t: 'bin', op: 'MOD', l, r: pMul(c) }; } return l; }
+function pMod(c) { let l = pIntDiv(c); while (kw(c.peek(), 'MOD')) { c.next(); l = { t: 'bin', op: 'MOD', l, r: pIntDiv(c) }; } return l; }
+function pIntDiv(c) { let l = pMul(c); while (c.peek() && c.peek().k === 'op' && c.peek().v === '\\') { c.next(); l = { t: 'bin', op: '\\', l, r: pMul(c) }; } return l; }
 function pMul(c) { let l = pUnary(c); while (c.peek() && c.peek().k === 'op' && (c.peek().v === '*' || c.peek().v === '/')) { const op = c.next().v; l = { t: 'bin', op, l, r: pUnary(c) }; } return l; }
 function pUnary(c) {
   if (c.peek() && c.peek().k === 'op' && c.peek().v === '+') { c.next(); return pUnary(c); }
@@ -1163,7 +1168,7 @@ class Basic {
   bin(op, l, r) {
     switch (op) {
       case '+': return (typeof l === 'string' || typeof r === 'string') ? String(l) + String(r) : l + r;
-      case '-': return num(l) - num(r); case '*': return num(l) * num(r); case '/': return num(l) / num(r);
+      case '-': return num(l) - num(r); case '*': return num(l) * num(r); case '/': return num(l) / num(r); case '\\': return Math.trunc(num(l) / num(r));
       case 'MOD': return Math.trunc(num(l)) % Math.trunc(num(r));
       case '^': return Math.pow(num(l), num(r));
       case '=': return l === r ? -1 : 0; case '<>': return l !== r ? -1 : 0;

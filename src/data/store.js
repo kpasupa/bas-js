@@ -234,6 +234,23 @@ function detokenize(bytes) {
   return lines.join('\n');
 }
 
+// GW-BASIC SAVE "file",P decryption — Paul Kocher, The Cryptogram #19 (1994)
+const _K1 = [0xA9,0x84,0x8D,0xCD,0x75,0x83,0x43,0x63,0x24,0x83,0x19,0xF7,0x9A]; // 13
+const _K2 = [0x1E,0x1D,0xC4,0x77,0x26,0x97,0xE0,0x74,0x59,0x88,0x7C];             // 11
+function deprotect(buf) {
+  const out = new Uint8Array(buf.length - 1); // -1: drop last byte (encrypted DOS Ctrl+Z)
+  out[0] = 0xFF;
+  for (let i = 0; i < buf.length - 2; i++) {
+    let c = buf[i + 1];
+    c = (c - (11 - i % 11) + 256) & 0xFF;
+    c ^= _K1[i % 13];
+    c ^= _K2[i % 11];
+    c = (c + (13 - i % 13)) & 0xFF;
+    out[i + 1] = c;
+  }
+  return out;
+}
+
 // ─── reads ───────────────────────────────────────────────────────────────────
 async function readFile(name) {
   const fh = await fileHandleFor(name);
@@ -249,6 +266,7 @@ async function readText(name) {
     const fh = await fileHandleFor(name);
     const buf = new Uint8Array(await (await fh.getFile()).arrayBuffer());
     if (buf.length > 0 && buf[0] === 0xFF) return detokenize(buf);
+    if (buf.length > 0 && buf[0] === 0xFE) return detokenize(deprotect(buf));
     return new TextDecoder().decode(buf);
   } catch {
     return null;

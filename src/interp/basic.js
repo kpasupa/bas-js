@@ -193,6 +193,9 @@ function parseStatement(c) {
         return { t: 'deffn', name: fname, params, body: parseExpr(c) };
       }
       case 'OPTION': { c.next(); if (kw(c.peek(), 'BASE')) c.next(); return { t: 'optionbase', n: c.next().v }; }
+      case 'POKE': { c.next(); parseExpr(c); if (!c.eof() && c.peek().k === 'comma') c.next(); parseExpr(c); return { t: 'rem' }; } // POKE addr,val — no-op in browser
+      case 'OUT': { c.next(); parseExpr(c); if (!c.eof() && c.peek().k === 'comma') c.next(); parseExpr(c); return { t: 'rem' }; } // OUT port,val — no-op
+      case 'WAIT': { c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' }; } // WAIT port,mask — no-op
       case 'CLEAR': { c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'clear' }; } // size args ignored
       case 'RANDOMIZE': { c.next(); let seed = null; if (!c.eof() && c.peek().k !== 'colon') seed = parseExpr(c); return { t: 'randomize', seed }; }
       case 'DEFINT': case 'DEFSNG': case 'DEFDBL': case 'DEFSTR': {

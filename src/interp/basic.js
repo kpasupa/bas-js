@@ -158,9 +158,9 @@ function parseStatement(c) {
       case 'KILL': { c.next(); return { t: 'kill', name: parseExpr(c) }; }
       case 'NAME': { c.next(); const from = parseExpr(c); if (kw(c.peek(), 'AS')) c.next(); return { t: 'name', from, to: parseExpr(c) }; }
       case 'LSET': case 'RSET': { c.next(); const name = c.next().v; c.next(); return { t: 'lset', name, right: w === 'RSET', expr: parseExpr(c) }; }
-      case 'SWAP': { c.next(); const a = c.next().v; if (!c.eof() && c.peek().k === 'comma') c.next(); const b = c.next().v; return { t: 'swap', a, b }; }
+      case 'SWAP': { c.next(); const sv = () => { const nm = c.next().v; if (c.peek() && c.peek().k === 'lp') { c.next(); const idx = [parseExpr(c)]; while (c.peek() && c.peek().k === 'comma') { c.next(); idx.push(parseExpr(c)); } c.next(); return { nm, idx }; } return nm; }; const a = sv(); if (!c.eof() && c.peek().k === 'comma') c.next(); return { t: 'swap', a, b: sv() }; }
       case 'DATA': { c.next(); return { t: 'data', values: parseDataItems(c) }; }  // consumes rest of line
-      case 'READ': { c.next(); const vars = [c.next().v]; while (!c.eof() && c.peek().k === 'comma') { c.next(); vars.push(c.next().v); } return { t: 'read', vars }; }
+      case 'READ': { c.next(); const rv = () => { const nm = c.next().v; if (c.peek() && c.peek().k === 'lp') { c.next(); const idx = [parseExpr(c)]; while (c.peek() && c.peek().k === 'comma') { c.next(); idx.push(parseExpr(c)); } c.next(); return { nm, idx }; } return nm; }; const vars = [rv()]; while (!c.eof() && c.peek().k === 'comma') { c.next(); vars.push(rv()); } return { t: 'read', vars }; }
       case 'RESTORE': { c.next(); let line = null; if (!c.eof() && c.peek().k === 'num') line = c.next().v; return { t: 'restore', line }; }
       case 'WRITE': { c.next(); let fileno = null; if (c.peek() && c.peek().k === 'hash') { c.next(); fileno = c.next().v; if (c.peek() && c.peek().k === 'comma') c.next(); } const vals = []; if (!c.eof() && c.peek().k !== 'colon') { vals.push(parseExpr(c)); while (!c.eof() && c.peek().k === 'comma') { c.next(); vals.push(parseExpr(c)); } } return { t: 'write', vals, fileno }; }
       case 'FOR': { c.next(); const v = c.next().v; c.next(); const from = parseExpr(c); /*TO*/ c.next(); const to = parseExpr(c); let step = { t: 'num', v: 1 }; if (kw(c.peek(), 'STEP')) { c.next(); step = parseExpr(c); } return { t: 'for', var: v, from, to, step }; }
@@ -597,6 +597,7 @@ class Basic {
   // for just that statement. This removes per-statement async overhead from scan loops.
 
   evlS(n) {
+    if (n == null) return 0;                                       // null/undefined slot (e.g. LOCATE ,col or COLOR ,bg)
     switch (n.t) {
       case 'num': return n.v;
       case 'str': return n.v;
@@ -671,13 +672,21 @@ class Basic {
         for (const e of st.vals) { const v = this.evlS(e); if (v === _S) return _S; parts.push(typeof v === 'number' ? String(v) : '"' + applyDisplay(String(v)) + '"'); }
         this.s.put(parts.join(',')); this.s.newline(); this.s.render(); return null;
       }
-      case 'swap': { const va = this.getVar(st.a), vb = this.getVar(st.b); this.setVar(st.a, vb); this.setVar(st.b, va); return null; }
+      case 'swap': {
+        const ei = (idx) => idx ? idx.map((e) => num(this.evlS(e))) : null;
+        const gv = (v, i) => i ? this.getArr(v.nm, i) : this.getVar(v);
+        const sv2 = (v, i, val) => { if (i) this.setArr(v.nm, i, val); else this.setVar(v, val); };
+        const ia = ei(st.a.idx), ib = ei(st.b.idx);
+        const va = gv(st.a, ia), vb = gv(st.b, ib);
+        sv2(st.a, ia, vb); sv2(st.b, ib, va); return null;
+      }
       case 'data': return null;                          // collected at load; no-op at runtime
       case 'read': {
-        for (const vn of st.vars) {
+        for (const v of st.vars) {
           if (this.dataPtr >= this.dataPool.length) throw new Error('Out of DATA');
-          const val = this.dataPool[this.dataPtr++];
-          this.setVar(vn, vn.endsWith('$') ? String(val) : num(val));
+          const raw = this.dataPool[this.dataPtr++];
+          if (typeof v === 'string') { this.setVar(v, v.endsWith('$') ? String(raw) : num(raw)); }
+          else { const idx = []; for (const e of v.idx) { const iv = this.evlS(e); if (iv === _S) return _S; idx.push(num(iv)); } this.setArr(v.nm, idx, v.nm.endsWith('$') ? String(raw) : num(raw)); }
         }
         return null;
       }
@@ -1139,6 +1148,7 @@ class Basic {
   }
 
   async evl(n) {
+    if (n == null) return 0;
     switch (n.t) {
       case 'num': return n.v;
       case 'str': return n.v;

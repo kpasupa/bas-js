@@ -1114,6 +1114,10 @@ class Basic {
       case 'play': { const s = String(await this.evl(st.str)); if (this.audio) await this.audio.play(s); return null; }
       case 'gscreen': {
         const m = num(await this.evl(st.mode));
+        // 320-pixel-wide modes (1, 7, 13) use 40-col text; all others use 80-col.
+        // setTextCols must run BEFORE gfx.screen() so _fit() sizes the canvas to match.
+        const tcols = (m === 1 || m === 7 || m === 13) ? 40 : 80;
+        this.s.setTextCols(tcols);
         if (this.gfx) this.gfx.screen(m);
         if (m === 0) { this.s.gfx = null; this.s.color(7, 0); this.s.cls(); }      // back to text: default grey/black
         else { this.s.gfx = this.gfx; this.s.color(m === 2 || m === 11 ? 1 : (m === 1 ? 3 : 15), 0); this.s.clearTransparent(); } // graphics: white text on bg 0, shared palette

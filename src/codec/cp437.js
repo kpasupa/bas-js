@@ -1,6 +1,6 @@
 // CP437 (DOS Code Page 437) — the original IBM PC character set used by GW-BASIC.
 // High bytes 0x80-0xFF map to Unicode block-drawing, Latin, Greek, and math symbols.
-// 0x00-0x7F pass through as ASCII (0x00/0x20 → space, control chars skipped).
+// 0x00 → space; 0x01-0x1F → DOS graphical glyphs (☺☻♥…); 0x20-0x7F → ASCII.
 
 const CP437 = [
   // 0x80
@@ -25,12 +25,17 @@ const CP437 = [
 const CP437_REV = {};
 CP437.forEach((ch, i) => { CP437_REV[ch] = i + 0x80; });
 
+// CP437 "graphical" control glyphs for bytes 0x01-0x1F (DOS text-mode displays these).
+const CP437_CTRL = '\x00☺☻♥♦♣♠•◘○◙♂♀♪♫☼►◄↕‼¶§▬↨↑↓→←∟↔▲▼';
+const CP437_CTRL_REV = {};
+for (let i = 1; i < CP437_CTRL.length; i++) { CP437_CTRL_REV[CP437_CTRL[i]] = i; }
+
 function cp437Display(s) {
   let r = '';
   for (const ch of s) {
     const b = ch.charCodeAt(0);
-    if (b === 0 || b === 0x20) { r += ' '; continue; }
-    if (b < 0x20) continue;          // control chars: no glyph
+    if (b === 0) { r += ' '; continue; }
+    if (b < 0x20) { r += CP437_CTRL[b]; continue; }
     if (b < 0x80) { r += ch; continue; }
     r += CP437[b - 0x80] ?? ch;
   }

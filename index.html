@@ -215,7 +215,7 @@
   // runtime) updates automatically. id:null = raw bytes (always first).
   const CODECS = [
     { id: null,    badge: '',         runtime() { return null; } },
-    { id: 'cp437', badge: '(CP437)',  runtime() { return { display: cp437Display, encode: cp437Encode }; } },
+    { id: 'cp437', badge: '(CP437)',  runtime() { return { display: cp437Display, encode: cp437Encode, reverse(ch) { const cp = ch.codePointAt(0); if (cp === 0) return 0; if (cp < 0x80) return cp; return CP437_REV[ch] ?? CP437_CTRL_REV[ch] ?? (cp & 0xFF); } }; } },
     { id: 'ku42',  badge: '(KU42)',   runtime() { return undefined; } },
   ];
 

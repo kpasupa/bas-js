@@ -57,6 +57,10 @@ function tokenize(src) {
     if (idStart(c)) { let j = i, id = ''; while (j < src.length && idChar(src[j])) id += src[j++]; if (j < src.length && '%!#$'.includes(src[j])) id += src[j++]; i = j; t.push({ k: 'id', v: id }); continue; }
     const two = src.substr(i, 2);
     if (two === '<=' || two === '>=' || two === '<>') { t.push({ k: 'op', v: two }); i += 2; continue; }
+    // GW-BASIC also accepts reversed comparison forms: => (≥), =< (≤), >< (≠)
+    if (two === '=>') { t.push({ k: 'op', v: '>=' }); i += 2; continue; }
+    if (two === '=<') { t.push({ k: 'op', v: '<=' }); i += 2; continue; }
+    if (two === '><') { t.push({ k: 'op', v: '<>' }); i += 2; continue; }
     if ('=<>+-*/^\\'.includes(c)) { t.push({ k: 'op', v: c }); i++; continue; }
     if (c === '(') { t.push({ k: 'lp' }); i++; continue; }
     if (c === ')') { t.push({ k: 'rp' }); i++; continue; }
@@ -88,6 +92,9 @@ function parseLine(tokens) {
 
 function parseStatement(c) {
   const tok = c.peek();
+  if (!tok) return { t: 'rem' };
+  // Bare line-number at statement start (GW-BASIC implicit-GOTO after THEN lineno spill).
+  if (tok.k === 'num') { c.next(); return tok.v > 0 ? { t: 'goto', line: tok.v } : { t: 'rem' }; }
   if (tok.k === 'id') {
     const w = tok.v.toUpperCase();
     switch (w) {
@@ -111,7 +118,7 @@ function parseStatement(c) {
       case 'RETURN': c.next(); return { t: 'return' };
       case 'GOTO': c.next(); return { t: 'goto', line: c.next().v };
       case 'GOSUB': c.next(); return { t: 'gosub', line: c.next().v };
-      case 'CHAIN': c.next(); return { t: 'chain', name: parseExpr(c) };
+      case 'CHAIN': { c.next(); const _cn = parseExpr(c); while (!c.eof() && c.peek().k === 'comma') { c.next(); if (!c.eof() && c.peek().k !== 'colon' && c.peek().k !== 'comma') parseExpr(c); } return { t: 'chain', name: _cn }; }
       case 'COLOR': c.next(); return { t: 'color', args: parseExprList(c) };
       case 'LOCATE': c.next(); return { t: 'locate', args: parseExprList(c) };
       case 'PRINT': {
@@ -164,7 +171,7 @@ function parseStatement(c) {
       case 'RESTORE': { c.next(); let line = null; if (!c.eof() && c.peek().k === 'num') line = c.next().v; return { t: 'restore', line }; }
       case 'WRITE': { c.next(); let fileno = null; if (c.peek() && c.peek().k === 'hash') { c.next(); fileno = c.next().v; if (c.peek() && c.peek().k === 'comma') c.next(); } const vals = []; if (!c.eof() && c.peek().k !== 'colon') { vals.push(parseExpr(c)); while (!c.eof() && c.peek().k === 'comma') { c.next(); vals.push(parseExpr(c)); } } return { t: 'write', vals, fileno }; }
       case 'FOR': { c.next(); const v = c.next().v; c.next(); const from = parseExpr(c); /*TO*/ c.next(); const to = parseExpr(c); let step = { t: 'num', v: 1 }; if (kw(c.peek(), 'STEP')) { c.next(); step = parseExpr(c); } return { t: 'for', var: v, from, to, step }; }
-      case 'NEXT': { c.next(); if (!c.eof() && c.peek().k === 'id') c.next(); return { t: 'next' }; }
+      case 'NEXT': { c.next(); let _nc = 0; while (!c.eof() && c.peek().k === 'id') { c.next(); _nc++; if (c.peek() && c.peek().k === 'comma') c.next(); } return { t: 'next', count: Math.max(1, _nc) }; }
       case 'WHILE': { c.next(); return { t: 'while', cond: parseExpr(c) }; }
       case 'WEND': { c.next(); return { t: 'wend' }; }
       case 'DIM': {
@@ -262,9 +269,37 @@ function parseStatement(c) {
         if (c.peek() && c.peek().k === 'comma') { c.next(); if (c.peek() && c.peek().k === 'id') box = c.next().v.toUpperCase(); }
         return { t: 'gline', x1, y1, step1, x2: p2.x, y2: p2.y, step2: p2.step, color, box };
       }
+      case 'RUN': {
+        c.next();
+        // RUN "file" / RUN"file" → chain to another .BAS (same as CHAIN)
+        if (!c.eof() && c.peek().k !== 'colon') return { t: 'chain', name: parseExpr(c) };
+        // Bare RUN → restart current program from the top
+        return { t: 'run' };
+      }
+      case 'LOAD': { c.next(); let _lf = null; if (!c.eof() && c.peek().k !== 'colon') _lf = parseExpr(c); while (!c.eof() && c.peek().k !== 'colon') c.next(); return _lf ? { t: 'chain', name: _lf } : { t: 'run' }; } // LOAD "file"[,R] — treat as CHAIN
+      case 'CALL': { c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' }; } // machine-code CALL — no-op
+      case 'BLOAD': case 'BSAVE': { c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' }; } // binary file load/save — no-op in browser
+      case 'MID$': {
+        // MID$(var$, pos[, len]) = expr — in-place string replacement (length unchanged)
+        c.next(); // consume MID$
+        if (c.peek() && c.peek().k === 'lp') {
+          c.next(); // (
+          const vname = c.next().v; // variable name
+          if (c.peek() && c.peek().k === 'comma') c.next();
+          const pos = parseExpr(c);
+          let len = null;
+          if (c.peek() && c.peek().k === 'comma') { c.next(); if (c.peek() && c.peek().k !== 'rp') len = parseExpr(c); }
+          if (c.peek() && c.peek().k === 'rp') c.next(); // )
+          if (c.peek() && c.peek().k === 'op' && c.peek().v === '=') c.next(); // =
+          return { t: 'midassign', var: vname, pos, len, expr: parseExpr(c) };
+        }
+        return { t: 'rem' };
+      }
     }
+    return parseAssign(c);  // id not in switch → variable assignment
   }
-  return parseAssign(c);
+  // Non-id, non-num token at statement start (structural leak): skip it.
+  c.next(); return { t: 'rem' };
 }
 
 function parseAssign(c) {
@@ -302,12 +337,21 @@ function parseExprList(c) {
   const args = [];
   if (c.eof() || c.peek().k === 'colon') return args;
   args.push(c.peek().k === 'comma' ? null : parseExpr(c));
-  while (!c.eof() && c.peek().k === 'comma') { c.next(); args.push((c.eof() || c.peek().k === 'colon') ? null : parseExpr(c)); }
+  while (!c.eof() && c.peek().k === 'comma') { c.next(); args.push((c.eof() || c.peek().k === 'colon' || c.peek().k === 'comma') ? null : parseExpr(c)); }
   return args;
 }
 
 function parseOpen(c) {
-  c.next(); const name = parseExpr(c); let fileno = 1, len = 0, mode = 'random';
+  c.next(); let nameExpr = parseExpr(c); let fileno = 1, len = 0, mode = 'random';
+  // Old-style: OPEN "I",#n,"filename" — detect single mode-letter as first arg
+  if (nameExpr.t === 'str' && /^[IiOoRrAaBb]$/.test(nameExpr.v)) {
+    const ml = nameExpr.v.toUpperCase();
+    mode = ml === 'I' ? 'input' : ml === 'O' ? 'output' : ml === 'A' ? 'append' : 'random';
+    if (c.peek() && c.peek().k === 'comma') c.next();
+    skipHash(c); if (!c.eof() && c.peek().k === 'num') fileno = c.next().v;
+    if (c.peek() && c.peek().k === 'comma') c.next();
+    nameExpr = parseExpr(c);
+  }
   while (!c.eof() && c.peek().k !== 'colon') {
     const t = c.next();
     if (t.k === 'hash') { fileno = c.next().v; }                  // AS #n
@@ -315,7 +359,7 @@ function parseOpen(c) {
     else if (t.k === 'id' && t.v.toUpperCase() === 'LEN') { if (c.peek() && c.peek().k === 'op' && c.peek().v === '=') c.next(); len = c.next().v; }
     else if (t.k === 'id' && t.v.toUpperCase() === 'FOR') { const m = c.next().v.toUpperCase(); mode = m === 'INPUT' ? 'input' : m === 'OUTPUT' ? 'output' : m === 'APPEND' ? 'append' : 'random'; }
   }
-  return { t: 'open', name, fileno, len, mode };
+  return { t: 'open', name: nameExpr, fileno, len, mode };
 }
 
 // Graphics coordinate "(x,y)" with optional STEP (relative) prefix.
@@ -354,9 +398,11 @@ function parsePrint(c, lpr) {
 
 function parseInput(c) {
   let prompt = null, sep = null;
+  if (c.peek() && c.peek().k === 'semi') c.next(); // INPUT ; prefix (suppress newline) — ignored
   if (c.peek() && c.peek().k === 'str') { prompt = c.next().v; if (c.peek() && (c.peek().k === 'semi' || c.peek().k === 'comma')) sep = c.next().k === 'semi' ? ';' : ','; }
-  const vars = [c.next().v];
-  while (!c.eof() && c.peek().k === 'comma') { c.next(); vars.push(c.next().v); }
+  const pv = () => { const nm = c.next().v; if (c.peek() && c.peek().k === 'lp') { c.next(); const idx = [parseExpr(c)]; while (c.peek() && c.peek().k === 'comma') { c.next(); idx.push(parseExpr(c)); } c.next(); return { name: nm, idx }; } return nm; };
+  const vars = [pv()];
+  while (!c.eof() && c.peek().k === 'comma') { c.next(); vars.push(pv()); }
   return { t: 'input', prompt, sep, vars };
 }
 
@@ -370,7 +416,12 @@ function parseIf(c) {
 }
 
 function parseBranch(c, stopAtElse) {
-  if (c.peek() && c.peek().k === 'num') return [{ t: 'goto', line: c.next().v }];
+  if (c.peek() && c.peek().k === 'num') {
+    const r = [{ t: 'goto', line: c.next().v }];
+    // When in THEN context, consume trailing ':' so parseIf can find ELSE directly.
+    if (stopAtElse) while (c.peek() && c.peek().k === 'colon') c.next();
+    return r;
+  }
   const stmts = [];
   while (!c.eof()) {
     if (c.peek().k === 'colon') { c.next(); continue; }
@@ -383,7 +434,10 @@ function parseBranch(c, stopAtElse) {
 }
 
 // expression parser (precedence: OR<AND<NOT<rel<+-<MOD<*/<unary<^<primary)
-function parseExpr(c) { return pOr(c); }
+function parseExpr(c) { return pImp(c); }
+function pImp(c) { let l = pEqv(c); while (kw(c.peek(), 'IMP')) { c.next(); l = { t: 'bin', op: 'IMP', l, r: pEqv(c) }; } return l; }
+function pEqv(c) { let l = pXor(c); while (kw(c.peek(), 'EQV')) { c.next(); l = { t: 'bin', op: 'EQV', l, r: pXor(c) }; } return l; }
+function pXor(c) { let l = pOr(c); while (kw(c.peek(), 'XOR')) { c.next(); l = { t: 'bin', op: 'XOR', l, r: pOr(c) }; } return l; }
 function pOr(c) { let l = pAnd(c); while (kw(c.peek(), 'OR')) { c.next(); l = { t: 'bin', op: 'OR', l, r: pAnd(c) }; } return l; }
 function pAnd(c) { let l = pNot(c); while (kw(c.peek(), 'AND')) { c.next(); l = { t: 'bin', op: 'AND', l, r: pNot(c) }; } return l; }
 function pNot(c) { if (kw(c.peek(), 'NOT')) { c.next(); return { t: 'un', op: 'NOT', e: pNot(c) }; } return pRel(c); }
@@ -463,6 +517,7 @@ const BUILTINS = new Set([
   'STRING$', 'SPACE$', 'ASC', 'INSTR', 'HEX$', 'OCT$',
   'CVI', 'MKI$', 'CVS', 'MKS$', 'CVD', 'MKD$', 'INKEY$', 'FRE', 'POS', 'EOF', 'LOF', 'LOC',
   'POINT', 'PMAP', 'SCREEN',
+  'PEEK', 'INP', 'VARPTR', 'VARPTR$', 'USR',
 ]);
 
 // DEFtype → suffix used by setVar/getVar for default-typed (suffixless) variables.
@@ -521,6 +576,7 @@ class Basic {
   // Coerce on store by the variable's type: explicit suffix wins; otherwise the DEFtype default
   // for its first letter (empty unless a DEFINT/DEFSTR/… ran), else single (number stored as-is).
   setVar(name, val) {
+    if (typeof name !== 'string' || name.length === 0) return;
     const last = name[name.length - 1];
     let ty = (last === '%' || last === '$' || last === '#' || last === '!') ? last : DEF2SUF[this.defType[name[0].toUpperCase()]];
     const k = this.varKey(name);
@@ -611,7 +667,7 @@ class Basic {
         const clk = clockVar(up); if (clk !== undefined) return clk;  // TIMER / DATE$ / TIME$
         return this.getVar(n.name);
       }
-      case 'un': { const e = this.evlS(n.e); if (e === _S) return _S; return n.op === '-' ? -num(e) : (truthy(e) ? 0 : -1); }
+      case 'un': { const e = this.evlS(n.e); if (e === _S) return _S; return n.op === '-' ? -num(e) : ~i16(e); }
       case 'call': {
         if (n.name === 'INPUT$') return _S;                         // blocking key read
         const a = []; for (const x of n.args) { const v = this.evlS(x); if (v === _S) return _S; a.push(v); }
@@ -633,13 +689,14 @@ class Basic {
       case 'end': return { t: 'end' };
       case 'system': return { t: 'system' };
       case 'return': return { t: 'return' };
+      case 'run': return { t: 'run' };
       case 'goto': return { t: 'goto', line: st.line };
-      case 'next': return { t: 'next' };
+      case 'next': return { t: 'next', count: st.count };
       // gosub recurses into a subroutine that may block partway; defer to the async path so a
       // blocking op there can't cause partial re-execution.
       case 'gosub': return _S;
       case 'color': { const a = this.evlS(st.args[0]); if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; if (this.gfx && this.gfx.active()) this.gfx.color(num(a), b != null ? num(b) : null); else this.s.color(num(a), b != null ? num(b) : null); return null; } // graphics: COLOR = background,palette (text stays white)
-      case 'locate': { const a = this.evlS(st.args[0]); if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; this.s.locate(num(a), b != null ? num(b) : null); return null; }
+      case 'locate': { const a = st.args[0] != null ? this.evlS(st.args[0]) : null; if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; this.s.locate(a != null ? num(a) : null, b != null ? num(b) : null); return null; }
       case 'assign': {
         const v = this.evlS(st.expr); if (v === _S) return _S;
         if (st.index) { const idx = []; for (const e of st.index) { const iv = this.evlS(e); if (iv === _S) return _S; idx.push(iv); } this.setArr(st.name, idx, v); }
@@ -679,6 +736,17 @@ class Basic {
         const ia = ei(st.a.idx), ib = ei(st.b.idx);
         const va = gv(st.a, ia), vb = gv(st.b, ib);
         sv2(st.a, ia, vb); sv2(st.b, ib, va); return null;
+      }
+      case 'midassign': {
+        const _mp = this.evlS(st.pos); if (_mp === _S) return _S;
+        const _mr = this.evlS(st.expr); if (_mr === _S) return _S;
+        const _ml = st.len != null ? this.evlS(st.len) : null; if (_ml === _S) return _S;
+        const _ms = String(this.getVar(st.var));
+        const _mp0 = Math.max(1, num(_mp)) - 1;
+        const _mrs = String(_mr);
+        const _mn = Math.max(0, Math.min(_ml != null ? num(_ml) : _mrs.length, _mrs.length, _ms.length - _mp0));
+        this.setVar(st.var, _ms.slice(0, _mp0) + _mrs.slice(0, _mn) + _ms.slice(_mp0 + _mn));
+        return null;
       }
       case 'data': return null;                          // collected at load; no-op at runtime
       case 'read': {
@@ -756,9 +824,15 @@ class Basic {
         this.setVar(st.var, num(from)); loops.push({ var: st.var, to: num(to), step: num(step), body: i + 1 }); i++; continue;
       }
       if (st.t === 'next') {
-        const f = loops[loops.length - 1]; if (!f) { i++; continue; }
-        const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
-        if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) i = f.body; else { loops.pop(); i++; }
+        const _nc = st.count || 1; let _nb = false;
+        for (let _ni = 0; _ni < _nc; _ni++) {
+          const f = loops[loops.length - 1];
+          if (!f) return { t: 'next', count: _nc - _ni }; // no local FOR — bubble up to outer run loop
+          const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
+          if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) { i = f.body; _nb = true; break; }
+          loops.pop();
+        }
+        if (!_nb) i++;
         continue;
       }
       const ctl = this.execS(st); if (ctl === _S) return _S; if (ctl) return ctl; i++;
@@ -805,6 +879,7 @@ class Basic {
           if (sr.t === 'goto') { ip = this.go(sr.line); continue; }
           if (sr.t === 'return') { if (stopOnReturn) return { t: 'return' }; ip++; continue; }
           if (sr.t === 'end' || sr.t === 'system' || sr.t === 'chain') return sr;
+          if (sr.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; ip = 0; continue; }
           if (sr.t === 'for') { this.setVar(sr.var, sr.from); loops.push({ var: sr.var, to: sr.to, step: sr.step, body: ip + 1 }); ip++; continue; }
           if (sr.t === 'next') {
             const f = loops[loops.length - 1];
@@ -827,17 +902,21 @@ class Basic {
         case 'end': return { t: 'end' };
         case 'system': return { t: 'system' };
         case 'chain': return ctl;
+        case 'run': this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; ip = 0; break;
         case 'for':
           // Empty-body delay loop ("FOR x=a TO b : NEXT") — the original's ~1s pause idiom.
           // Run it as a real timed delay so flashed messages are readable.
           if (this.flat[ip + 1] && this.flat[ip + 1].t === 'next') { await sleep(delayMs(ctl.from, ctl.to)); ip += 2; break; }
           this.setVar(ctl.var, ctl.from); loops.push({ var: ctl.var, to: ctl.to, step: ctl.step, body: ip + 1 }); ip++; break;
         case 'next': {
-          const f = loops[loops.length - 1];
-          if (!f) { ip++; break; }
-          const nv = num(this.getVar(f.var)) + f.step;
-          this.setVar(f.var, nv);
-          if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) ip = f.body; else { loops.pop(); ip++; }
+          const _nc = ctl.count || 1; let _nb = false;
+          for (let _ni = 0; _ni < _nc; _ni++) {
+            const f = loops[loops.length - 1]; if (!f) break;
+            const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
+            if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) { ip = f.body; _nb = true; break; }
+            loops.pop();
+          }
+          if (!_nb) ip++;
           break;
         }
         case 'while': ip = ctl.truth ? ip + 1 : (ctl.node.wendIp != null ? ctl.node.wendIp + 1 : ip + 1); break;
@@ -873,10 +952,15 @@ class Basic {
         this.setVar(st.var, from); loops.push({ var: st.var, to, step: num(await this.evl(st.step)), body: i + 1 }); i++; continue;
       }
       if (st.t === 'next') {
-        const f = loops[loops.length - 1];
-        if (!f) { i++; continue; }
-        const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
-        if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) i = f.body; else { loops.pop(); i++; }
+        const _nc = st.count || 1; let _nb = false;
+        for (let _ni = 0; _ni < _nc; _ni++) {
+          const f = loops[loops.length - 1];
+          if (!f) return { t: 'next', count: _nc - _ni }; // no local FOR — bubble up to outer run loop
+          const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
+          if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) { i = f.body; _nb = true; break; }
+          loops.pop();
+        }
+        if (!_nb) i++;
         continue;
       }
       const sr = this.execS(st);
@@ -896,8 +980,9 @@ class Basic {
       case 'end': return { t: 'end' };
       case 'system': return { t: 'system' };
       case 'return': return { t: 'return' };
+      case 'run': return { t: 'run' };
       case 'goto': return { t: 'goto', line: st.line };
-      case 'gosub': { const r = await this.run(this.go(st.line), true); return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain') ? r : null; }
+      case 'gosub': { const r = await this.run(this.go(st.line), true); return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain' || r.t === 'run') ? r : null; }
       case 'chain': {
         const name = String(await this.evl(st.name));
         const keepV = {}; for (const k of this.commonVars) if (k in this.vars) keepV[k] = this.vars[k];   // CHAIN passes ONLY
@@ -906,11 +991,21 @@ class Basic {
         return { t: 'chain', name };
       }
       case 'color': { const fg = num(await this.evl(st.args[0])), bg = st.args[1] != null ? num(await this.evl(st.args[1])) : null; if (this.gfx && this.gfx.active()) this.gfx.color(fg, bg); else this.s.color(fg, bg); return null; }
-      case 'locate': this.s.locate(num(await this.evl(st.args[0])), st.args[1] != null ? num(await this.evl(st.args[1])) : null); return null;
+      case 'locate': { const _lr = st.args[0] != null ? num(await this.evl(st.args[0])) : null; const _lc = st.args[1] != null ? num(await this.evl(st.args[1])) : null; this.s.locate(_lr, _lc); return null; }
       case 'assign': {
         const v = await this.evl(st.expr);
         if (st.index) { const idx = []; for (const e of st.index) idx.push(await this.evl(e)); this.setArr(st.name, idx, v); }
         else this.setVar(st.name, v);
+        return null;
+      }
+      case 'midassign': {
+        const _mp = num(await this.evl(st.pos));
+        const _mr = String(await this.evl(st.expr));
+        const _ml = st.len != null ? num(await this.evl(st.len)) : null;
+        const _ms = String(this.getVar(st.var));
+        const _mp0 = Math.max(1, _mp) - 1;
+        const _mn = Math.max(0, Math.min(_ml != null ? _ml : _mr.length, _mr.length, _ms.length - _mp0));
+        this.setVar(st.var, _ms.slice(0, _mp0) + _mr.slice(0, _mn) + _ms.slice(_mp0 + _mn));
         return null;
       }
       case 'on': {
@@ -919,7 +1014,7 @@ class Basic {
         const target = st.lines[idx - 1];
         if (!st.gosub) return { t: 'goto', line: target };
         const r = await this.run(this.go(target), true);          // ON..GOSUB: call, then continue
-        return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain') ? r : null;
+        return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain' || r.t === 'run') ? r : null;
       }
       case 'print': return st.fileno != null ? this.doFilePrint(st) : this.doPrint(st);
       case 'write': return this.doFileWrite(st);          // only reaches here when st.fileno set (else execS handles)
@@ -934,7 +1029,7 @@ class Basic {
         return null;
       }
       case 'for': return { t: 'for', var: st.var, from: num(await this.evl(st.from)), to: num(await this.evl(st.to)), step: num(await this.evl(st.step)) };
-      case 'next': return { t: 'next' };
+      case 'next': return { t: 'next', count: st.count };
       case 'while': return { t: 'while', truth: truthy(await this.evl(st.cond)), node: st };
       case 'wend': return { t: 'wend', node: st };
       case 'open': { const name = fileName(await this.evl(st.name)); await this.openFile(st.fileno, name, st.len, st.mode); return null; }
@@ -1140,10 +1235,14 @@ class Basic {
     // screens (e.g. CHQ07B 1000→GOTO 140) — universal, no per-program special-casing.
     if (this.onPrintReady && !this.printer.isEmpty()) { this.onPrintReady(this.printer.lines); this.printer.reset(); }
     if (st.prompt != null) { this.s.put(applyDisplay(st.prompt)); this.s.render(); }
-    const v = st.vars[0];
-    const type = v.endsWith('$') ? 'str' : v.endsWith('%') ? 'int' : 'num';
-    const raw = await this.term.inputLine({ type: type === 'int' ? 'int' : type === 'num' ? 'num' : 'str', question: st.sep === ';' || st.prompt == null });
-    this.setVar(v, type === 'str' ? applyEncode(raw) : raw);
+    for (const v of st.vars) {
+      const name = typeof v === 'string' ? v : v.name;
+      const type = name.endsWith('$') ? 'str' : name.endsWith('%') ? 'int' : 'num';
+      const raw = await this.term.inputLine({ type: type === 'int' ? 'int' : type === 'num' ? 'num' : 'str', question: st.sep === ';' || st.prompt == null });
+      const val = type === 'str' ? applyEncode(raw) : raw;
+      if (typeof v === 'string') this.setVar(v, val);
+      else { const idx = []; for (const e of v.idx) idx.push(num(await this.evl(e))); this.setArr(name, idx, val); }
+    }
     return null;
   }
 
@@ -1164,7 +1263,7 @@ class Basic {
         const clk = clockVar(up); if (clk !== undefined) return clk;  // TIMER / DATE$ / TIME$
         return this.getVar(n.name);
       }
-      case 'un': return n.op === '-' ? -num(await this.evl(n.e)) : (truthy(await this.evl(n.e)) ? 0 : -1);
+      case 'un': { const _ue = await this.evl(n.e); return n.op === '-' ? -num(_ue) : ~i16(_ue); }
       case 'call': {
         const a = []; for (const x of n.args) a.push(await this.evl(x));
         // INPUT$(n): read exactly n keys (blocking) — used for single-key confirms (CHQ02 890).
@@ -1187,7 +1286,11 @@ class Basic {
       case '=': return l === r ? -1 : 0; case '<>': return l !== r ? -1 : 0;
       case '<': return l < r ? -1 : 0; case '>': return l > r ? -1 : 0;
       case '<=': return l <= r ? -1 : 0; case '>=': return l >= r ? -1 : 0;
-      case 'AND': return (truthy(l) && truthy(r)) ? -1 : 0; case 'OR': return (truthy(l) || truthy(r)) ? -1 : 0;
+      // GW-BASIC bitwise ops: truncate to 16-bit signed integer first
+      case 'AND': return i16(l) & i16(r); case 'OR': return i16(l) | i16(r);
+      case 'XOR': return i16(l) ^ i16(r);
+      case 'EQV': return ~(i16(l) ^ i16(r));
+      case 'IMP': return (~i16(l)) | i16(r);
     }
     return 0;
   }
@@ -1229,9 +1332,27 @@ class Basic {
       case 'EOF': { const f = this.files[num(a[0])]; return f && f.data ? (f.pos >= f.data.length ? -1 : 0) : -1; }
       case 'LOF': { const f = this.files[num(a[0])]; return f ? (f.data ? f.data.length : (f.out ? f.out.length : 0)) : 0; }
       case 'LOC': { const f = this.files[num(a[0])]; if (!f) return 0; return Math.floor((f.data ? f.pos : (f.out ? f.out.length : 0)) / 128); }
+      case 'PEEK': return 0;        // memory read — no real address space in JS
+      case 'INP': return 0;         // hardware port read — inert
+      case 'VARPTR': return 0;      // variable pointer — dummy
+      case 'VARPTR$': return a.length ? String(a[0]) : '';  // used by DRAW X sub-string — return content
+      case 'USR': return a.length ? num(a[0]) : 0;  // machine-code call — pass-through stub
       case 'POINT': return this.gfx ? this.gfx.point(num(a[0]), num(a[1])) : -1;     // pixel colour at (x,y)
       case 'PMAP': return this.gfx ? this.gfx.pmap(num(a[0]), num(a[1])) : num(a[0]);  // logical↔physical map
-      case 'SCREEN': return this.gfx && this.gfx.scrn ? this.gfx.scrn(num(a[0]), num(a[1])) : 32; // read char/attr (text)
+      case 'SCREEN': {
+        if (this.gfx && this.gfx.active() && this.gfx.scrn) return this.gfx.scrn(num(a[0]), num(a[1]));
+        const sr = Math.max(1, Math.min(this.s.rows, Math.round(num(a[0])))), sc = Math.max(1, Math.min(this.s.cols, Math.round(num(a[1]))));
+        const cell = this.s.cells[sr - 1] && this.s.cells[sr - 1][sc - 1];
+        if (!cell) return 32;
+        const _sch = cell.ch; const _scp = _sch.charCodeAt(0);
+        if (_scp < 0x80) return _scp;
+        // Use codec reverse (unicode display char → original GW-BASIC byte).
+        const _codec = window._bas_codec;
+        if (_codec && _codec.reverse) { const _b = _codec.reverse(_sch); if (_b != null) return _b; }
+        // KU42 default reverse lookup.
+        const _ku42b = UTF8_TO_KU42[_sch];
+        return _ku42b != null ? _ku42b : (_scp & 0xFF);
+      } // read char/attr (text)
     }
     console.warn(`[bas] unsupported function ${name}() — returning 0`);
     return 0;
@@ -1262,6 +1383,8 @@ function matchPattern(name, pat) {
 }
 
 const num = (v) => (typeof v === 'number' ? v : parseFloat(v) || 0);
+// GW-BASIC integer narrowing: round to nearest and sign-extend to 16-bit signed range.
+const i16 = (v) => { const n = Math.round(num(v)) & 0xFFFF; return n >= 0x8000 ? n - 0x10000 : n; };
 // GW-BASIC CINT rounds to the nearest integer, ties to even (banker's rounding): 2.5→2, 3.5→4.
 const cint = (x) => { const f = Math.floor(x), d = x - f; if (d < 0.5) return f; if (d > 0.5) return f + 1; return f % 2 === 0 ? f : f + 1; };
 // Bare system-clock built-ins (no parens): TIMER (secs since midnight), DATE$ ("MM-DD-YYYY"),

@@ -55,12 +55,14 @@ function tokenize(src) {
       i = j; t.push({ k: 'num', v: parseFloat(n) }); continue;
     }
     if (idStart(c)) { let j = i, id = ''; while (j < src.length && idChar(src[j])) id += src[j++]; if (j < src.length && '%!#$'.includes(src[j])) id += src[j++]; i = j; t.push({ k: 'id', v: id }); continue; }
-    const two = src.substr(i, 2);
-    if (two === '<=' || two === '>=' || two === '<>') { t.push({ k: 'op', v: two }); i += 2; continue; }
-    // GW-BASIC also accepts reversed comparison forms: => (≥), =< (≤), >< (≠)
-    if (two === '=>') { t.push({ k: 'op', v: '>=' }); i += 2; continue; }
-    if (two === '=<') { t.push({ k: 'op', v: '<=' }); i += 2; continue; }
-    if (two === '><') { t.push({ k: 'op', v: '<>' }); i += 2; continue; }
+    // Two-char relational operators; also handle optional spaces between chars (GW-BASIC detokenised form, e.g. '< >' → '<>')
+    if ('<>='.includes(c)) {
+      let j = i + 1;
+      while (j < src.length && src[j] === ' ') j++;
+      const two = c + (src[j] || '');
+      const norm = {'<>':'<>','<=':'<=','>=':'>=','=>':'>=','=<':'<=','><':'<>'}[two];
+      if (norm) { t.push({ k: 'op', v: norm }); i = j + 1; continue; }
+    }
     if ('=<>+-*/^\\'.includes(c)) { t.push({ k: 'op', v: c }); i++; continue; }
     if (c === '(') { t.push({ k: 'lp' }); i++; continue; }
     if (c === ')') { t.push({ k: 'rp' }); i++; continue; }
@@ -906,7 +908,7 @@ class Basic {
         const sr = this.execS(cur);
         if (sr !== _S) {
           if (!sr) { ip++; continue; }
-          if (sr.t === 'goto') { if (!(sr.line in this.lineStart)) console.error('[bas] goto undef line', sr.line, 'at src-line', this.flatLines[ip], JSON.stringify(cur)); ip = this.go(sr.line); continue; }
+          if (sr.t === 'goto') { ip = this.go(sr.line); continue; }
           if (sr.t === 'return') { if (stopOnReturn) return { t: 'return' }; ip++; continue; }
           if (sr.t === 'end' || sr.t === 'system' || sr.t === 'chain') return sr;
           if (sr.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; ip = 0; continue; }
@@ -931,7 +933,7 @@ class Basic {
       const ctl = await this.exec(this.flat[ip]);
       if (!ctl) { ip++; continue; }
       switch (ctl.t) {
-        case 'goto': if (!(ctl.line in this.lineStart)) console.error('[bas] goto undef line', ctl.line, 'at src-line', this.flatLines[ip], JSON.stringify(this.flat[ip])); ip = this.go(ctl.line); break;
+        case 'goto': ip = this.go(ctl.line); break;
         case 'return': if (stopOnReturn) return { t: 'return' }; ip++; break;
         case 'end': return { t: 'end' };
         case 'system': return { t: 'system' };

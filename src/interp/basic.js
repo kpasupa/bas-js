@@ -671,7 +671,9 @@ class Basic {
     }
 
     this.go = (ln) => { if (!(ln in this.lineStart)) throw new Error('Undefined line ' + ln); return this.lineStart[ln]; };
-    this.onErrorLine = 0;  // ON ERROR does not carry over across CHAIN (GW-BASIC behaviour)
+    this.onErrorLine = 0;  // ON ERROR / traps do not carry over across CHAIN (GW-BASIC behaviour)
+    this.trapKey = {}; this.trapKeyState = {}; this.anyTrapOn = false; this.inTrap = false;
+    this.timerLine = 0; this.timerSec = 0; this.timerState = 'OFF';
     return this.run(0, false);
   }
 
@@ -904,7 +906,7 @@ class Basic {
         const sr = this.execS(cur);
         if (sr !== _S) {
           if (!sr) { ip++; continue; }
-          if (sr.t === 'goto') { ip = this.go(sr.line); continue; }
+          if (sr.t === 'goto') { if (!(sr.line in this.lineStart)) console.error('[bas] goto undef line', sr.line, 'at src-line', this.flatLines[ip], JSON.stringify(cur)); ip = this.go(sr.line); continue; }
           if (sr.t === 'return') { if (stopOnReturn) return { t: 'return' }; ip++; continue; }
           if (sr.t === 'end' || sr.t === 'system' || sr.t === 'chain') return sr;
           if (sr.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; ip = 0; continue; }

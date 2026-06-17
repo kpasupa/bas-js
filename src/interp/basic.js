@@ -931,7 +931,7 @@ class Basic {
       const ctl = await this.exec(this.flat[ip]);
       if (!ctl) { ip++; continue; }
       switch (ctl.t) {
-        case 'goto': ip = this.go(ctl.line); break;
+        case 'goto': if (!(ctl.line in this.lineStart)) console.error('[bas] goto undef line', ctl.line, 'at src-line', this.flatLines[ip], JSON.stringify(this.flat[ip])); ip = this.go(ctl.line); break;
         case 'return': if (stopOnReturn) return { t: 'return' }; ip++; break;
         case 'end': return { t: 'end' };
         case 'system': return { t: 'system' };

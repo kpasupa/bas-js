@@ -523,6 +523,30 @@ const BUILTINS = new Set([
 // DEFtype → suffix used by setVar/getVar for default-typed (suffixless) variables.
 const DEF2SUF = { int: '%', str: '$', dbl: '#', sng: '!' };
 
+// Emit a raw GW-BASIC byte string to a screen sink, interpreting control chars
+// (CHR$ 7-13, 28-31) as cursor/screen commands before the display codec runs.
+// Only the printable byte segments go through applyDisplay.
+function putCtrl(sink, raw) {
+  let seg = '';
+  const flush = () => { if (seg) { sink.put(applyDisplay(seg)); seg = ''; } };
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw.charCodeAt(i);
+    switch (c) {
+      case  7: flush(); beep(); break;
+      case  8: case 29: flush(); sink.cursorLeft?.();  break;  // BS / cursor-left
+      case 10: flush(); sink.newline();                break;  // LF
+      case 11: flush(); sink.locate?.(1, 1);           break;  // VT → home
+      case 12: flush(); sink.cls?.();                  break;  // FF → clear screen
+      case 13: flush(); sink.locate?.(null, 1);        break;  // CR
+      case 28: flush(); sink.cursorRight?.();          break;
+      case 30: flush(); sink.cursorUp?.();             break;
+      case 31: flush(); sink.cursorDown?.();           break;
+      default: seg += raw[i];
+    }
+  }
+  flush();
+}
+
 // ── interpreter ───────────────────────────────────────────────────────────────
 class Basic {
   constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.arrays = {}; this.optionBase = 0; this.defType = {}; this.fns = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.commonArrs = new Set(); this.onPrintReady = null; this.audio = null; this.gfx = null; this.rndState = 0x2545f4914f6cdd1d & 0xffffffff; this.rndLast = 0; this.onErrorLine = 0; this.errCode = 0; this.errLineNo = 0; this.errIp = 0; this.trace = false;
@@ -799,7 +823,7 @@ class Basic {
     for (const it of st.lead) {
       if (it.kind === 'tab') { const v = this.evlS(it.expr); if (v === _S) return _S; sink.tab(num(v)); }
       else if (it.kind === 'spc') { const v = this.evlS(it.expr); if (v === _S) return _S; st.lpr ? sink.spaces(num(v)) : sink.put(' '.repeat(num(v))); }
-      else { const v = this.evlS(it.expr); if (v === _S) return _S; sink.put(typeof v === 'number' ? basicPrintNum(v) : (st.lpr ? v : applyDisplay(v))); }
+      else { const v = this.evlS(it.expr); if (v === _S) return _S; if (typeof v === 'number') sink.put(basicPrintNum(v)); else if (st.lpr) sink.put(v); else putCtrl(sink, v); }
     }
     if (st.using != null) {
       const mask = this.evlS(st.using); if (mask === _S) return _S;
@@ -1198,7 +1222,7 @@ class Basic {
     for (const it of st.lead) {
       if (it.kind === 'tab') s.tab(num(await this.evl(it.expr)));
       else if (it.kind === 'spc') s.put(' '.repeat(num(await this.evl(it.expr))));
-      else { const v = await this.evl(it.expr); s.put(typeof v === 'number' ? basicPrintNum(v) : applyDisplay(v)); }
+      else { const v = await this.evl(it.expr); if (typeof v === 'number') s.put(basicPrintNum(v)); else putCtrl(s, v); }
     }
     if (st.using != null) {
       const mask = String(await this.evl(st.using));

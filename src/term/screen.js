@@ -61,6 +61,11 @@ class Screen {
     if (col != null) this.col = Math.max(1, Math.min(this.cols, col));
   }
 
+  cursorLeft()  { if (this.col > 1) this.col--; }
+  cursorRight() { if (this.col < this.cols) this.col++; else this.newline(); }
+  cursorUp()    { if (this.row > 1) this.row--; }
+  cursorDown()  { if (this.row < this.rows) this.row++; else this.scroll(); }
+
   // TAB(n): move the print column to n (1-based). If already past n, wrap to next line.
   tab(n) {
     if (this.col > n) this.newline();

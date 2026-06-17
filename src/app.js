@@ -19,6 +19,10 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
   bas.audio = new SoundEngine();                // SOUND / PLAY via Web Audio
 
   let prog = boot;
+  // Directory prefix of the current program (e.g. "old_games/"). CHAIN targets with no path
+  // separator are resolved relative to this prefix, matching GW-BASIC's single-directory model
+  // where all programs live in the same folder as the one currently running.
+  let basDir = /[/\\]/.test(prog) ? prog.replace(/[^/\\]*$/, '') : '';
   try {
     while (prog) {
       const src = await loadBas(prog);
@@ -28,7 +32,13 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
       }
       const res = await bas.runText(src);
       if (!bas.printer.isEmpty()) { showPrintPreview(bas.printer.lines, prog); bas.printer.reset(); }
-      if (res && res.t === 'chain') { console.info(`[bas] ${prog}.BAS → CHAIN ${res.name}`); prog = res.name; }
+      if (res && res.t === 'chain') {
+        console.info(`[bas] ${prog}.BAS → CHAIN ${res.name}`);
+        // Bare name (no slash) → same directory as the current program.
+        // Explicit path (e.g. "other/GAME") → used as-is.
+        prog = /[/\\]/.test(res.name) ? res.name : basDir + res.name;
+        basDir = /[/\\]/.test(prog) ? prog.replace(/[^/\\]*$/, '') : '';
+      }
       else if (res && res.t === 'system') { console.info(`[bas] ${prog}.BAS exited (SYSTEM)`); s.color(7, 0); s.locate(25, 1); s.put('[ exited — SYSTEM ]'); s.render(); break; }
       else {
         // Normal END / ran off the end: hold the output on screen until a keypress, so

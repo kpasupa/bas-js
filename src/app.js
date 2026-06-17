@@ -36,7 +36,8 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
         console.info(`[bas] ${prog}.BAS → CHAIN ${res.name}`);
         // Bare name (no slash) → same directory as the current program.
         // Explicit path (e.g. "other/GAME") → used as-is.
-        prog = /[/\\]/.test(res.name) ? res.name : basDir + res.name;
+        const _cn = String(res.name).replace(/^[A-Za-z]:/, '');  // strip DOS drive prefix (e.g. "B:MENU" → "MENU")
+        prog = /[/\\]/.test(_cn) ? _cn : basDir + _cn;
         basDir = /[/\\]/.test(prog) ? prog.replace(/[^/\\]*$/, '') : '';
       }
       else if (res && res.t === 'system') { console.info(`[bas] ${prog}.BAS exited (SYSTEM)`); s.color(7, 0); s.locate(25, 1); s.put('[ exited — SYSTEM ]'); s.render(); break; }

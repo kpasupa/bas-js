@@ -271,9 +271,12 @@ function parseStatement(c) {
       }
       case 'RUN': {
         c.next();
-        // RUN "file" / RUN"file" → chain to another .BAS (same as CHAIN)
-        if (!c.eof() && c.peek().k !== 'colon') return { t: 'chain', name: parseExpr(c) };
-        // Bare RUN → restart current program from the top
+        if (!c.eof() && c.peek().k !== 'colon') {
+          const _ra = parseExpr(c);
+          // RUN "file" → chain to another .BAS; RUN lineNum → restart current program
+          if (_ra.t === 'str') return { t: 'chain', name: _ra };
+          return { t: 'run' };
+        }
         return { t: 'run' };
       }
       case 'LOAD': { c.next(); let _lf = null; if (!c.eof() && c.peek().k !== 'colon') _lf = parseExpr(c); while (!c.eof() && c.peek().k !== 'colon') c.next(); return _lf ? { t: 'chain', name: _lf } : { t: 'run' }; } // LOAD "file"[,R] — treat as CHAIN
@@ -668,6 +671,7 @@ class Basic {
     }
 
     this.go = (ln) => { if (!(ln in this.lineStart)) throw new Error('Undefined line ' + ln); return this.lineStart[ln]; };
+    this.onErrorLine = 0;  // ON ERROR does not carry over across CHAIN (GW-BASIC behaviour)
     return this.run(0, false);
   }
 

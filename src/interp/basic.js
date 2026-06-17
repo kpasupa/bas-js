@@ -906,10 +906,14 @@ class Basic {
           if (sr.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; ip = 0; continue; }
           if (sr.t === 'for') { this.setVar(sr.var, sr.from); loops.push({ var: sr.var, to: sr.to, step: sr.step, body: ip + 1 }); ip++; continue; }
           if (sr.t === 'next') {
-            const f = loops[loops.length - 1];
-            if (!f) { ip++; continue; }
-            const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
-            if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) ip = f.body; else { loops.pop(); ip++; }
+            const _nc = sr.count || 1; let _nb = false;
+            for (let _ni = 0; _ni < _nc; _ni++) {
+              const f = loops[loops.length - 1]; if (!f) break;
+              const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
+              if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) { ip = f.body; _nb = true; break; }
+              loops.pop();
+            }
+            if (!_nb) ip++;
             continue;
           }
           if (sr.t === 'while') { ip = sr.truth ? ip + 1 : (sr.node.wendIp != null ? sr.node.wendIp + 1 : ip + 1); continue; }

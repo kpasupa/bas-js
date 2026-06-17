@@ -591,7 +591,7 @@ class Basic {
     const sizes = dims.map((d) => Math.floor(num(d)) - base + 1);
     const strides = new Array(sizes.length); let tot = 1;
     for (let i = sizes.length - 1; i >= 0; i--) { strides[i] = tot; tot *= sizes[i]; }
-    this.arrays[key] = { base, strides, data: new Array(tot).fill(key.endsWith('$') ? '' : 0) };
+    this.arrays[key] = { base, strides, data: new Array(tot).fill((key.endsWith('$') || this.defType[name[0].toUpperCase()] === 'str') ? '' : 0) };
   }
   _arr(name, n) {                                  // fetch, auto-dimensioning to 10 per axis if unseen
     const key = this.varKey(name);
@@ -600,7 +600,7 @@ class Basic {
   }
   _off(arr, idxs) { let o = 0; for (let i = 0; i < idxs.length; i++) o += (Math.floor(num(idxs[i])) - arr.base) * arr.strides[i]; return o; }
   getArr(name, idxs) { const arr = this._arr(name, idxs.length); return arr.data[this._off(arr, idxs)]; }
-  setArr(name, idxs, val) { const arr = this._arr(name, idxs.length); const k = this.varKey(name); arr.data[this._off(arr, idxs)] = k.endsWith('%') ? Math.trunc(num(val)) : (k.endsWith('$') ? String(val) : val); }
+  setArr(name, idxs, val) { const arr = this._arr(name, idxs.length); const k = this.varKey(name); const _ty = k.endsWith('%') ? '%' : k.endsWith('$') ? '$' : DEF2SUF[this.defType[name[0].toUpperCase()]]; arr.data[this._off(arr, idxs)] = _ty === '%' ? Math.trunc(num(val)) : _ty === '$' ? String(val) : val; }
 
   // ── DEF FN user functions ─────────────────────────────────────────────────────
   // Single-line functions. Params shadow same-named globals for the duration of the call, then
@@ -753,8 +753,8 @@ class Basic {
         for (const v of st.vars) {
           if (this.dataPtr >= this.dataPool.length) throw new Error('Out of DATA');
           const raw = this.dataPool[this.dataPtr++];
-          if (typeof v === 'string') { this.setVar(v, v.endsWith('$') ? String(raw) : num(raw)); }
-          else { const idx = []; for (const e of v.idx) { const iv = this.evlS(e); if (iv === _S) return _S; idx.push(num(iv)); } this.setArr(v.nm, idx, v.nm.endsWith('$') ? String(raw) : num(raw)); }
+          if (typeof v === 'string') { const _rs = v.endsWith('$') || this.defType[v[0].toUpperCase()] === 'str'; this.setVar(v, _rs ? String(raw) : num(raw)); }
+          else { const idx = []; for (const e of v.idx) { const iv = this.evlS(e); if (iv === _S) return _S; idx.push(num(iv)); } const _rs = v.nm.endsWith('$') || this.defType[v.nm[0].toUpperCase()] === 'str'; this.setArr(v.nm, idx, _rs ? String(raw) : num(raw)); }
         }
         return null;
       }

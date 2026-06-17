@@ -101,6 +101,7 @@ function parseStatement(c) {
     const w = tok.v.toUpperCase();
     switch (w) {
       case 'REM': while (!c.eof()) c.next(); return { t: 'rem' };
+      case 'THEN': c.next(); return { t: 'rem' }; // stray THEN at statement start — skip, parseLine re-enters for the following statement
       case 'COMMON': {
         c.next(); const vars = [], arrs = [];
         while (!c.eof() && c.peek().k !== 'colon') {

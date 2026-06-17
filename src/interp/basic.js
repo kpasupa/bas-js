@@ -567,9 +567,15 @@ class Basic {
       const now = this._now();
       if (now - this.timerLast >= this.timerSec * 1000) { this.timerLast = now; return this.timerLine; }
     }
-    if (this.term && this.term.nextTrap) {
-      let k;
-      while ((k = this.term.nextTrap()) !== 0) if (this.trapKeyState[k] === 'ON' && this.trapKey[k]) return this.trapKey[k];
+    if (this.term && this.term._trapBuf) {
+      // Scan trap buffer: consume ON keys (fire), discard OFF keys, leave STOP keys deferred.
+      const buf = this.term._trapBuf;
+      for (let i = 0; i < buf.length; i++) {
+        const k = buf[i];
+        if (this.trapKeyState[k] === 'ON' && this.trapKey[k]) { buf.splice(i, 1); return this.trapKey[k]; }
+        if (this.trapKeyState[k] !== 'STOP') { buf.splice(i, 1); i--; } // OFF or no handler: discard
+        // STOP: leave in buffer, it will fire when KEY(n) ON is next called
+      }
     }
     return 0;
   }

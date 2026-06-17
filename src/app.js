@@ -4,7 +4,7 @@
 
 const DEFAULT_BOOT = 'PASSWORD';
 
-const loadBas = (name) => readText(`${String(name).trim().toUpperCase()}.BAS`);
+const loadBas = (name) => { let n = String(name).trim().toUpperCase(); if (n.endsWith('.BAS')) n = n.slice(0, -4); return readText(`${n}.BAS`); };
 
 async function runApp(el, status, boot = DEFAULT_BOOT) {
   const s = new Screen(el);

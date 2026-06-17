@@ -261,16 +261,27 @@ async function readFile(name) {
 // folders like BASIC/COMMAND/RUN.BAS). Returns null if missing, so CHAIN to it is graceful.
 // Automatically detokenizes GW-BASIC binary (.BAS saved without ,A) so the interpreter always
 // receives plain ASCII regardless of which format the file was saved in.
+// Falls back to a case-insensitive directory scan so CHAIN "menu" finds MENU.BAS on
+// case-sensitive filesystems (Linux, some macOS/browser combos).
 async function readText(name) {
-  try {
-    const fh = await fileHandleFor(name);
-    const buf = new Uint8Array(await (await fh.getFile()).arrayBuffer());
+  const _decode = (buf) => {
     if (buf.length > 0 && buf[0] === 0xFF) return detokenize(buf);
     if (buf.length > 0 && buf[0] === 0xFE) return detokenize(deprotect(buf));
     return new TextDecoder().decode(buf);
-  } catch {
-    return null;
-  }
+  };
+  try {
+    const fh = await fileHandleFor(name);
+    return _decode(new Uint8Array(await (await fh.getFile()).arrayBuffer()));
+  } catch {}
+  // Case-insensitive fallback: scan root directory for a matching filename.
+  const upper = name.toUpperCase();
+  try {
+    for await (const entry of requireDir().values()) {
+      if (entry.kind === 'file' && entry.name.toUpperCase() === upper)
+        return _decode(new Uint8Array(await (await entry.getFile()).arrayBuffer()));
+    }
+  } catch {}
+  return null;
 }
 
 // Read exactly one record (slice the File — avoids loading the whole file).

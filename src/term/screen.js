@@ -16,7 +16,7 @@ class Screen {
     this.bg = 0;
     this.row = 1;
     this.col = 1;
-    this.cursorOn = false;
+    this.cursorOn = true;
     this.gfx = null;          // when set + active, text colours map through the canvas palette
     this.cells = [];
     this.cls();

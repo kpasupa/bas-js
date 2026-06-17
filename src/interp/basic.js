@@ -729,7 +729,7 @@ class Basic {
       // blocking op there can't cause partial re-execution.
       case 'gosub': return _S;
       case 'color': { const a = this.evlS(st.args[0]); if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; if (this.gfx && this.gfx.active()) this.gfx.color(num(a), b != null ? num(b) : null); else this.s.color(num(a), b != null ? num(b) : null); return null; } // graphics: COLOR = background,palette (text stays white)
-      case 'locate': { const a = st.args[0] != null ? this.evlS(st.args[0]) : null; if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; this.s.locate(a != null ? num(a) : null, b != null ? num(b) : null); return null; }
+      case 'locate': { const a = st.args[0] != null ? this.evlS(st.args[0]) : null; if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; this.s.locate(a != null ? num(a) : null, b != null ? num(b) : null); if (st.args[2] != null) { const cv = this.evlS(st.args[2]); if (cv !== _S) this.s.setCursorVisible(num(cv) !== 0); } return null; }
       case 'assign': {
         const v = this.evlS(st.expr); if (v === _S) return _S;
         if (st.index) { const idx = []; for (const e of st.index) { const iv = this.evlS(e); if (iv === _S) return _S; idx.push(iv); } this.setArr(st.name, idx, v); }
@@ -1044,7 +1044,7 @@ class Basic {
         return { t: 'chain', name };
       }
       case 'color': { const fg = num(await this.evl(st.args[0])), bg = st.args[1] != null ? num(await this.evl(st.args[1])) : null; if (this.gfx && this.gfx.active()) this.gfx.color(fg, bg); else this.s.color(fg, bg); return null; }
-      case 'locate': { const _lr = st.args[0] != null ? num(await this.evl(st.args[0])) : null; const _lc = st.args[1] != null ? num(await this.evl(st.args[1])) : null; this.s.locate(_lr, _lc); return null; }
+      case 'locate': { const _lr = st.args[0] != null ? num(await this.evl(st.args[0])) : null; const _lc = st.args[1] != null ? num(await this.evl(st.args[1])) : null; this.s.locate(_lr, _lc); if (st.args[2] != null) this.s.setCursorVisible(num(await this.evl(st.args[2])) !== 0); return null; }
       case 'assign': {
         const v = await this.evl(st.expr);
         if (st.index) { const idx = []; for (const e of st.index) idx.push(await this.evl(e)); this.setArr(st.name, idx, v); }

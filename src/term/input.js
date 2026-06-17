@@ -97,7 +97,6 @@ class Terminal {
       s.put(ch);
       s.render();
     }
-    s.setCursorVisible(false);
     s.newline();
     s.render();
     if (type === 'int') { const v = parseInt(buf, 10); return Number.isNaN(v) ? 0 : v; }

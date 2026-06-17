@@ -851,7 +851,7 @@ class Basic {
         const _nc = st.count || 1; let _nb = false;
         for (let _ni = 0; _ni < _nc; _ni++) {
           const f = loops[loops.length - 1];
-          if (!f) return { t: 'next', count: _nc - _ni }; // no local FOR — bubble up to outer run loop
+          if (!f) return { t: 'next', count: _nc - _ni, remainder: stmts.slice(i + 1) }; // no local FOR — bubble up; remainder runs if outer loop exhausts
           const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
           if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) { i = f.body; _nb = true; break; }
           loops.pop();
@@ -940,7 +940,23 @@ class Basic {
             if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) { ip = f.body; _nb = true; break; }
             loops.pop();
           }
-          if (!_nb) ip++;
+          if (!_nb) {
+            // When NEXT was inside an IF-THEN branch, the remainder of that branch runs now.
+            // e.g. FOR I=1 TO N:IF C(I)<>0 THEN NEXT:GOSUB win:GOTO top — GOSUB win only fires
+            // after the loop exhausts (all elements non-zero), matching GW-BASIC semantics.
+            if (ctl.remainder?.length) {
+              const _rem = await this.runStatements(ctl.remainder);
+              if (_rem) {
+                if (_rem.t === 'goto') { ip = this.go(_rem.line); break; }
+                if (_rem.t === 'return') { if (stopOnReturn) return { t: 'return' }; ip++; break; }
+                if (_rem.t === 'end') return { t: 'end' };
+                if (_rem.t === 'system') return { t: 'system' };
+                if (_rem.t === 'chain') return _rem;
+                if (_rem.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; ip = 0; break; }
+              }
+            }
+            ip++;
+          }
           break;
         }
         case 'while': ip = ctl.truth ? ip + 1 : (ctl.node.wendIp != null ? ctl.node.wendIp + 1 : ip + 1); break;
@@ -979,7 +995,7 @@ class Basic {
         const _nc = st.count || 1; let _nb = false;
         for (let _ni = 0; _ni < _nc; _ni++) {
           const f = loops[loops.length - 1];
-          if (!f) return { t: 'next', count: _nc - _ni }; // no local FOR — bubble up to outer run loop
+          if (!f) return { t: 'next', count: _nc - _ni, remainder: stmts.slice(i + 1) }; // no local FOR — bubble up; remainder runs if outer loop exhausts
           const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
           if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) { i = f.body; _nb = true; break; }
           loops.pop();

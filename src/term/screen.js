@@ -105,7 +105,7 @@ class Screen {
   setCursorVisible(on) { this.cursorOn = on; this.render(); }
   // Switch text column count for SCREEN 1 (40-col) vs SCREEN 0/2+ (80-col).
   // Called before gfx._fit() so the canvas sizes to match the new text width.
-  setTextCols(n) { if (this.cols === n) return; this.cols = n; if (this.el) this.el.style.width = n + 'ch'; }
+  setTextCols(n) { if (this.cols === n) return; this.cols = n; if (this.el) { this.el.style.width = n + 'ch'; this.el.style.transform = n === 40 ? 'scale(2, 1)' : ''; } }
 
   render() {
     const out = [];

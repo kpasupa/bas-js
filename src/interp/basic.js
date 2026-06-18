@@ -70,6 +70,7 @@ function tokenize(src) {
     if (c === ';') { t.push({ k: 'semi' }); i++; continue; }
     if (c === ':') { t.push({ k: 'colon' }); i++; continue; }
     if (c === '#') { t.push({ k: 'hash' }); i++; continue; }  // file-number marker (e.g. PRINT #1) — needed to tell file I/O from console
+    if (c === '?') { t.push({ k: 'id', v: 'PRINT' }); i++; continue; }  // GW-BASIC ? shorthand for PRINT
     i++; // skip any other unknown char
   }
   return t;
@@ -134,7 +135,8 @@ function parseStatement(c) {
         c.next();
         if (c.peek() && c.peek().k === 'hash') {           // INPUT #n, var, var…  (sequential)
           c.next(); const fileno = c.next().v; if (c.peek() && c.peek().k === 'comma') c.next();
-          const vars = [c.next().v]; while (!c.eof() && c.peek().k === 'comma') { c.next(); vars.push(c.next().v); }
+          const _pv = () => { const nm = c.next().v; if (c.peek() && c.peek().k === 'lp') { c.next(); const idx = [parseExpr(c)]; while (c.peek() && c.peek().k === 'comma') { c.next(); idx.push(parseExpr(c)); } c.next(); return { name: nm, idx }; } return nm; };
+          const vars = [_pv()]; while (!c.eof() && c.peek().k === 'comma') { c.next(); vars.push(_pv()); }
           return { t: 'finput', fileno, vars };
         }
         return parseInput(c);
@@ -219,7 +221,13 @@ function parseStatement(c) {
         }
         return { t: 'deftype', ty, ranges };
       }
-      case 'WIDTH': c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' };
+      case 'WIDTH': {
+        c.next();
+        if (c.peek() && c.peek().k === 'str') { while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' }; } // WIDTH "device",n — ignore
+        const cols = parseExpr(c);
+        while (!c.eof() && c.peek().k !== 'colon') c.next();
+        return { t: 'width', cols };
+      }
       case 'KEY': {
         c.next();
         if (c.peek() && c.peek().k === 'lp') { c.next(); const n = parseExpr(c); if (c.peek() && c.peek().k === 'rp') c.next(); return { t: 'trapstate', ev: 'KEY', n, state: (c.next().v || '').toUpperCase() }; } // KEY(n) ON/OFF/STOP
@@ -236,7 +244,7 @@ function parseStatement(c) {
       case 'PSET': case 'PRESET': { const preset = w === 'PRESET'; c.next(); const p = parseCoord(c); let color = null; if (c.peek() && c.peek().k === 'comma') { c.next(); color = parseExpr(c); } return { t: 'pset', preset, x: p.x, y: p.y, step: p.step, color }; }
       case 'CIRCLE': {
         c.next(); const p = parseCoord(c); if (c.peek() && c.peek().k === 'comma') c.next(); const r = parseExpr(c);
-        const opt = () => { if (c.peek() && c.peek().k === 'comma') { c.next(); return (!c.eof() && c.peek().k !== 'comma' && c.peek().k !== 'colon') ? parseExpr(c) : null; } return null; };
+        const opt = () => { if (c.peek() && c.peek().k === 'comma') { c.next(); const nx = c.peek(); if (!nx || nx.k === 'comma' || nx.k === 'colon' || kw(nx, 'PRINT')) return null; return parseExpr(c); } return null; };
         const color = opt(), start = opt(), end = opt(), aspect = opt();
         return { t: 'circle', x: p.x, y: p.y, r, color, start, end, aspect };
       }
@@ -860,6 +868,7 @@ class Basic {
         const from = this.evlS(st.from); if (from === _S) return _S;
         const to = this.evlS(st.to); if (to === _S) return _S;
         const step = this.evlS(st.step); if (step === _S) return _S;
+        let _sfi = loops.length - 1; while (_sfi >= 0 && loops[_sfi].var !== st.var) _sfi--; if (_sfi >= 0) loops.splice(_sfi);
         this.setVar(st.var, num(from)); loops.push({ var: st.var, to: num(to), step: num(step), body: i + 1 }); i++; continue;
       }
       if (st.t === 'next') {
@@ -919,7 +928,7 @@ class Basic {
           if (sr.t === 'return') { if (stopOnReturn) return { t: 'return' }; ip++; continue; }
           if (sr.t === 'end' || sr.t === 'system' || sr.t === 'chain') return sr;
           if (sr.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; ip = 0; continue; }
-          if (sr.t === 'for') { this.setVar(sr.var, sr.from); loops.push({ var: sr.var, to: sr.to, step: sr.step, body: ip + 1 }); ip++; continue; }
+          if (sr.t === 'for') { let _sfi = loops.length - 1; while (_sfi >= 0 && loops[_sfi].var !== sr.var) _sfi--; if (_sfi >= 0) loops.splice(_sfi); this.setVar(sr.var, sr.from); loops.push({ var: sr.var, to: sr.to, step: sr.step, body: ip + 1 }); ip++; continue; }
           if (sr.t === 'next') {
             const _nc = sr.count || 1; let _nb = false;
             for (let _ni = 0; _ni < _nc; _ni++) {
@@ -950,6 +959,7 @@ class Basic {
           // Empty-body delay loop ("FOR x=a TO b : NEXT") — the original's ~1s pause idiom.
           // Run it as a real timed delay so flashed messages are readable.
           if (this.flat[ip + 1] && this.flat[ip + 1].t === 'next') { await sleep(delayMs(ctl.from, ctl.to)); ip += 2; break; }
+          { let _sfi = loops.length - 1; while (_sfi >= 0 && loops[_sfi].var !== ctl.var) _sfi--; if (_sfi >= 0) loops.splice(_sfi); }
           this.setVar(ctl.var, ctl.from); loops.push({ var: ctl.var, to: ctl.to, step: ctl.step, body: ip + 1 }); ip++; break;
         case 'next': {
           const _nc = ctl.count || 1; let _nb = false;
@@ -1008,6 +1018,7 @@ class Basic {
       if (st.t === 'for') {
         const from = num(await this.evl(st.from)), to = num(await this.evl(st.to));
         if (stmts[i + 1] && stmts[i + 1].t === 'next') { await sleep(delayMs(from, to)); i += 2; continue; } // empty-body delay loop
+        let _sfi = loops.length - 1; while (_sfi >= 0 && loops[_sfi].var !== st.var) _sfi--; if (_sfi >= 0) loops.splice(_sfi);
         this.setVar(st.var, from); loops.push({ var: st.var, to, step: num(await this.evl(st.step)), body: i + 1 }); i++; continue;
       }
       if (st.t === 'next') {
@@ -1112,12 +1123,14 @@ class Basic {
       case 'clear': { this.vars = {}; this.arrays = {}; await this.closeFile(null); return null; } // reset state; size args no-op
       case 'sound': { const f = num(await this.evl(st.freq)), d = num(await this.evl(st.dur)); if (this.audio) await this.audio.sound(f, d); return null; }
       case 'play': { const s = String(await this.evl(st.str)); if (this.audio) await this.audio.play(s); return null; }
+      case 'width': { const n = num(await this.evl(st.cols)); this.s.setTextCols(n === 40 ? 40 : 80); return null; }
       case 'gscreen': {
         const m = num(await this.evl(st.mode));
-        // 320-pixel-wide modes (1, 7, 13) use 40-col text; all others use 80-col.
+        // GFX modes with fixed hardware column width: SCREEN 1/7/13 = 40-col, SCREEN 2/9/10/11/12 = 80-col.
+        // SCREEN 0 (text mode) does NOT change WIDTH — it preserves whatever WIDTH the program set.
         // setTextCols must run BEFORE gfx.screen() so _fit() sizes the canvas to match.
-        const tcols = (m === 1 || m === 7 || m === 13) ? 40 : 80;
-        this.s.setTextCols(tcols);
+        if (m === 1 || m === 7 || m === 13) this.s.setTextCols(40);
+        else if (m !== 0) this.s.setTextCols(80);
         if (this.gfx) this.gfx.screen(m);
         if (m === 0) { this.s.gfx = null; this.s.color(7, 0); this.s.cls(); }      // back to text: default grey/black
         else { this.s.gfx = this.gfx; this.s.color(m === 2 || m === 11 ? 1 : (m === 1 ? 3 : 15), 0); this.s.clearTransparent(); } // graphics: white text on bg 0, shared palette
@@ -1237,7 +1250,16 @@ class Basic {
     if (f.pos < d.length && d[f.pos] === 0x0a) f.pos++;
     return s;
   }
-  async doFinput(st) { const f = this.files[st.fileno]; for (const vn of st.vars) this.setVar(vn, this.readDatum(f, vn.endsWith('$'))); return null; }
+  async doFinput(st) {
+    const f = this.files[st.fileno];
+    for (const vn of st.vars) {
+      const name = typeof vn === 'string' ? vn : vn.name;
+      const val = this.readDatum(f, name.endsWith('$'));
+      if (typeof vn === 'string') this.setVar(vn, val);
+      else { const idx = []; for (const e of vn.idx) idx.push(num(await this.evl(e))); this.setArr(name, idx, val); }
+    }
+    return null;
+  }
   async doFilePrint(st) {
     let buf = '', col = 1; const put = (s) => { buf += s; col += s.length; };
     for (const it of st.lead) {
@@ -1380,7 +1402,7 @@ class Basic {
       case 'SPACE$': return ' '.repeat(num(a[0]));
       case 'ASC': return String(a[0]).length ? String(a[0]).charCodeAt(0) : 0;
       // INSTR([start,] str, sub) — 1-based position of sub in str (0 if absent).
-      case 'INSTR': { const off = a.length >= 3 ? num(a[0]) : 1; const s = String(a.length >= 3 ? a[1] : a[0]); const sub = String(a.length >= 3 ? a[2] : a[1]); return s.indexOf(sub, Math.max(0, off - 1)) + 1; }
+      case 'INSTR': { const off = a.length >= 3 ? num(a[0]) : 1; const s = String(a.length >= 3 ? a[1] : a[0]); const sub = String(a.length >= 3 ? a[2] : a[1]); if (sub === '') return 0; return s.indexOf(sub, Math.max(0, off - 1)) + 1; }
       case 'HEX$': { let n = Math.round(num(a[0])); if (n < 0) n &= 0xffff; return n.toString(16).toUpperCase(); }
       case 'OCT$': { let n = Math.round(num(a[0])); if (n < 0) n &= 0xffff; return n.toString(8); }
       case 'CVI': { const b = bytesOf(String(a[0])); const v = (b[0] || 0) | ((b[1] || 0) << 8); return v & 0x8000 ? v - 0x10000 : v; }
@@ -1427,10 +1449,24 @@ class Basic {
 // nested IF whose branches aren't pure. (INKEY$/INPUT$ inside an expression still surface as _S
 // at eval time, so this only needs to catch statement-level blockers.)
 function branchIsPure(stmts) {
+  // Allow-list: only statement types that execS handles synchronously without side effects
+  // that would need rolling back. Anything unlisted (graphics, sound, async I/O, unknown)
+  // is considered impure — the IF falls back to the async exec path which runs it once, correctly.
   for (const st of stmts || []) {
-    if (st.t === 'input' || st.t === 'lineinput' || st.t === 'finput' || st.t === 'flineinput' || st.t === 'open' || st.t === 'put' || st.t === 'chain' || st.t === 'gosub') return false;
-    if (st.t === 'on' && st.gosub) return false;
-    if (st.t === 'if' && (!branchIsPure(st.then) || !branchIsPure(st.else))) return false;
+    switch (st.t) {
+      case 'rem': case 'common': case 'end': case 'system': case 'return': case 'run':
+      case 'goto': case 'next': case 'for': case 'while': case 'wend':
+      case 'color': case 'locate': case 'assign': case 'dim': case 'erase':
+      case 'optionbase': case 'deftype': case 'deffn': case 'tron':
+      case 'ontrap': case 'trapstate': case 'onerror': case 'raiseerror': case 'resume':
+      case 'randomize': case 'data': case 'read': case 'restore':
+      case 'swap': case 'midassign': case 'lset': case 'field': case 'get':
+        break;
+      case 'print': case 'write': if (st.fileno != null) return false; break;
+      case 'on': if (st.gosub) return false; break;
+      case 'if': if (!branchIsPure(st.then) || !branchIsPure(st.else)) return false; break;
+      default: return false;
+    }
   }
   return true;
 }

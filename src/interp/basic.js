@@ -54,7 +54,7 @@ function tokenize(src) {
       if (j < src.length && /[%!#]/.test(src[j])) j++;
       i = j; t.push({ k: 'num', v: parseFloat(n) }); continue;
     }
-    if (idStart(c)) { let j = i, id = ''; while (j < src.length && idChar(src[j])) id += src[j++]; if (j < src.length && '%!#$'.includes(src[j])) id += src[j++]; i = j; t.push({ k: 'id', v: id }); continue; }
+    if (idStart(c)) { let j = i, id = ''; while (j < src.length && idChar(src[j])) id += src[j++]; if (j < src.length && '%!$'.includes(src[j])) id += src[j++]; else if (j < src.length && src[j] === '#' && (j + 1 >= src.length || !/[0-9]/.test(src[j + 1]))) id += src[j++]; i = j; t.push({ k: 'id', v: id }); continue; }
     // Two-char relational operators; also handle optional spaces between chars (GW-BASIC detokenised form, e.g. '< >' → '<>')
     if ('<>='.includes(c)) {
       let j = i + 1;

@@ -1205,7 +1205,7 @@ class Basic {
   async closeFile(fileno) {
     const flush = async (f) => {
       if (!f) return;
-      if (f.mode === 'output' || f.mode === 'append') { if (f.dirty) { console.log(`[bas] closeFile writing "${f.name}" ${f.out.length} chars`); await writeWholeFile(f.name, bytesOf(f.out)); f.dirty = false; } }
+      if (f.mode === 'output' || f.mode === 'append') { if (f.dirty) { await writeWholeFile(f.name, bytesOf(f.out)); f.dirty = false; } }
       else if (f.isNew && f.dirty) { await writeWholeFile(f.name, f.data); f.dirty = false; }
     };
     if (fileno != null) { await flush(this.files[fileno]); delete this.files[fileno]; }
@@ -1221,7 +1221,7 @@ class Basic {
     } else if (mode === 'output') {                           // sequential write (truncate)
       await openOrCreate(name);
       this.files[fileno] = { name, mode, out: '', dirty: true };
-      console.log(`[bas] OPEN OUTPUT #${fileno} "${name}"`);
+
     } else if (mode === 'append') {                           // sequential write (append)
       let data; try { data = await readFile(name); } catch { data = new Uint8Array(0); await openOrCreate(name); }
       this.files[fileno] = { name, mode, out: strOf(data), dirty: true };
@@ -1234,7 +1234,7 @@ class Basic {
   }
 
   // ── sequential file text I/O ──────────────────────────────────────────────────
-  fileAppend(fileno, text) { const f = this.files[fileno]; f.out += text; f.dirty = true; console.log(`[bas] fileAppend #${fileno} ${JSON.stringify(text.slice(0,40))}`); }
+  fileAppend(fileno, text) { const f = this.files[fileno]; f.out += text; f.dirty = true; }
   // Read one whitespace/comma-delimited datum (or a "quoted string") from a FOR INPUT file.
   readDatum(f, isStr) {
     const d = f.data;
@@ -1404,7 +1404,7 @@ class Basic {
       case 'CHR$': return String.fromCharCode(num(a[0]) & 0xff);
       case 'STR$': return num(a[0]) >= 0 ? ' ' + fmtNum(num(a[0])) : fmtNum(num(a[0]));
       case 'RIGHT$': return String(a[0]).slice(-num(a[1])); case 'LEFT$': return String(a[0]).slice(0, num(a[1]));
-      case 'MID$': return String(a[0]).substr(num(a[1]) - 1, a[2] != null ? num(a[2]) : undefined);
+      case 'MID$': { const _s = String(a[0]), _p = num(a[1]) - 1; if (_p < 0) return ''; return _s.substr(_p, a[2] != null ? num(a[2]) : undefined); }
       case 'STRING$': return (typeof a[1] === 'number' ? String.fromCharCode(a[1]) : String(a[1])[0]).repeat(num(a[0]));
       case 'SPACE$': return ' '.repeat(num(a[0]));
       case 'ASC': return String(a[0]).length ? String(a[0]).charCodeAt(0) : 0;
@@ -1424,7 +1424,7 @@ class Basic {
       case 'EOF': { const f = this.files[num(a[0])]; return f && f.data ? (f.pos >= f.data.length ? -1 : 0) : -1; }
       case 'LOF': { const f = this.files[num(a[0])]; return f ? (f.data ? f.data.length : (f.out ? f.out.length : 0)) : 0; }
       case 'LOC': { const f = this.files[num(a[0])]; if (!f) return 0; return Math.floor((f.data ? f.pos : (f.out ? f.out.length : 0)) / 128); }
-      case 'PEEK': { const off = num(a[0]); const r = (this.defSeg === 0x40 && off === 0x4A) ? this.s.cols : 0; console.log(`[bas] PEEK(&H${off.toString(16).toUpperCase()}) defSeg=${this.defSeg} → ${r}`); return r; } // BIOS 0040:004A = screen columns
+      case 'PEEK': { const off = num(a[0]); return (this.defSeg === 0x40 && off === 0x4A) ? this.s.cols : 0; } // BIOS 0040:004A = screen columns
       case 'INP': return 0;         // hardware port read — inert
       case 'VARPTR': return 0;      // variable pointer — dummy
       case 'VARPTR$': return a.length ? String(a[0]) : '';  // used by DRAW X sub-string — return content

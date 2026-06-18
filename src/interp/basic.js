@@ -193,9 +193,12 @@ function parseStatement(c) {
       case 'ERASE': { c.next(); const names = [c.next().v]; while (!c.eof() && c.peek().k === 'comma') { c.next(); names.push(c.next().v); } return { t: 'erase', names }; }
       case 'DEF': {
         c.next();
-        if (kw(c.peek(), 'SEG') || kw(c.peek(), 'USR')) { // DEF SEG / DEF USR — no-op
-          c.next(); if (c.peek() && c.peek().k === 'op' && c.peek().v === '=') { c.next(); parseExpr(c); }
-          return { t: 'rem' };
+        if (kw(c.peek(), 'SEG') || kw(c.peek(), 'USR')) {
+          const isUsr = kw(c.peek(), 'USR');
+          c.next(); let val = null;
+          if (c.peek() && c.peek().k === 'op' && c.peek().v === '=') { c.next(); val = parseExpr(c); }
+          if (isUsr) return { t: 'rem' };
+          return { t: 'defseg', val };   // DEF SEG [= expr]
         }
         let fname = c.next().v.toUpperCase();               // FNxxx  (or "FN" then the name, if spaced)
         if (fname === 'FN' && c.peek() && c.peek().k === 'id') fname = 'FN' + c.next().v.toUpperCase();
@@ -403,6 +406,7 @@ function parsePrint(c, lpr) {
       }
       break;
     }
+    if (kw(c.peek(), 'ELSE') || kw(c.peek(), 'THEN')) break; // stop before ELSE/THEN so IF…THEN PRINT…ELSE works
     if (kw(c.peek(), 'TAB') || kw(c.peek(), 'SPC')) { const fn = c.next().v.toUpperCase(); c.next(); const e = parseExpr(c); c.next(); lead.push({ kind: fn === 'TAB' ? 'tab' : 'spc', expr: e }); }
     else lead.push({ kind: 'expr', expr: parseExpr(c) });
     if (!c.eof() && (c.peek().k === 'semi' || c.peek().k === 'comma')) trailing = c.next().k === 'semi' ? ';' : ','; else trailing = null;
@@ -563,7 +567,7 @@ function putCtrl(sink, raw) {
 
 // ── interpreter ───────────────────────────────────────────────────────────────
 class Basic {
-  constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.arrays = {}; this.optionBase = 0; this.defType = {}; this.fns = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.commonArrs = new Set(); this.onPrintReady = null; this.audio = null; this.gfx = null; this.rndState = 0x2545f4914f6cdd1d & 0xffffffff; this.rndLast = 0; this.onErrorLine = 0; this.errCode = 0; this.errLineNo = 0; this.errIp = 0; this.trace = false;
+  constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.arrays = {}; this.optionBase = 0; this.defType = {}; this.fns = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.commonArrs = new Set(); this.onPrintReady = null; this.audio = null; this.gfx = null; this.rndState = 0x2545f4914f6cdd1d & 0xffffffff; this.rndLast = 0; this.onErrorLine = 0; this.errCode = 0; this.errLineNo = 0; this.errIp = 0; this.trace = false; this.defSeg = 0;
     this.trapKey = {}; this.trapKeyState = {}; this.timerLine = 0; this.timerSec = 0; this.timerState = 'OFF'; this.timerLast = 0; this.inTrap = false; this.anyTrapOn = false; }
 
   _now() { return (typeof performance !== 'undefined' ? performance.now() : Date.now()); } // overridable in tests
@@ -752,6 +756,7 @@ class Basic {
       }
       case 'dim': { for (const d of st.decls) { const dims = []; for (const e of d.dims) { const v = this.evlS(e); if (v === _S) return _S; dims.push(v); } this.allocArray(d.name, dims); } return null; }
       case 'erase': { for (const nm of st.names) delete this.arrays[this.varKey(nm)]; return null; }
+      case 'defseg': { const v = st.val != null ? this.evlS(st.val) : null; if (v === _S) return _S; this.defSeg = v != null ? num(v) : 0; return null; }
       case 'optionbase': this.optionBase = num(st.n); return null;
       case 'deftype': { for (const [lo, hi] of st.ranges) for (let ch = lo.charCodeAt(0); ch <= hi.charCodeAt(0); ch++) this.defType[String.fromCharCode(ch)] = st.ty; return null; }
       case 'tron': this.trace = st.on; return null;
@@ -1417,7 +1422,7 @@ class Basic {
       case 'EOF': { const f = this.files[num(a[0])]; return f && f.data ? (f.pos >= f.data.length ? -1 : 0) : -1; }
       case 'LOF': { const f = this.files[num(a[0])]; return f ? (f.data ? f.data.length : (f.out ? f.out.length : 0)) : 0; }
       case 'LOC': { const f = this.files[num(a[0])]; if (!f) return 0; return Math.floor((f.data ? f.pos : (f.out ? f.out.length : 0)) / 128); }
-      case 'PEEK': return 0;        // memory read — no real address space in JS
+      case 'PEEK': { const off = num(a[0]); if (this.defSeg === 0x40 && off === 0x4A) return this.s.cols; return 0; } // BIOS 0040:004A = screen columns
       case 'INP': return 0;         // hardware port read — inert
       case 'VARPTR': return 0;      // variable pointer — dummy
       case 'VARPTR$': return a.length ? String(a[0]) : '';  // used by DRAW X sub-string — return content
@@ -1457,7 +1462,7 @@ function branchIsPure(stmts) {
       case 'rem': case 'common': case 'end': case 'system': case 'return': case 'run':
       case 'goto': case 'next': case 'for': case 'while': case 'wend':
       case 'color': case 'locate': case 'assign': case 'dim': case 'erase':
-      case 'optionbase': case 'deftype': case 'deffn': case 'tron':
+      case 'defseg': case 'optionbase': case 'deftype': case 'deffn': case 'tron':
       case 'ontrap': case 'trapstate': case 'onerror': case 'raiseerror': case 'resume':
       case 'randomize': case 'data': case 'read': case 'restore':
       case 'swap': case 'midassign': case 'lset': case 'field': case 'get':

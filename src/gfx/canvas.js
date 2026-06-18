@@ -83,8 +83,8 @@ class Graphics {
     this.canvas.style.height = boxH + 'px';
     this.canvas.style.transformOrigin = '0 0';
     this.canvas.style.transform = scaleX === 2 ? 'scale(2, 1)' : '';
-    // pixel aspect ratio for the actual display (natural dimensions, not CSS-scaled)
-    this._circleAspect = (boxW * this.H) / (boxH * this.W);
+    // pixel aspect ratio for the actual display; scaleX accounts for scale(2,1) in 40-col mode
+    this._circleAspect = (boxW * scaleX * this.H) / (boxH * this.W);
   }
   _ci(c) { c = c == null ? this.fg : c | 0; return ((c % this.ncol) + this.ncol) % this.ncol; } // wrap to mode's colour count
 

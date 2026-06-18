@@ -11,17 +11,38 @@ class Terminal {
     this._waiters = [];    // pending nextKey() resolvers
     this._trapBuf = [];    // function-key numbers (F1..F12 -> 1..12) for ON KEY trapping
     this._onKey = this._onKey.bind(this);
+    this._ctrlCTime = 0;  // timestamp of last Ctrl+C — double-tap within 500ms aborts
   }
 
   attach() { window.addEventListener('keydown', this._onKey); }
   detach() { window.removeEventListener('keydown', this._onKey); }
 
+  pasteText(text) {
+    text = text.replace(/\r\n/g, '\r').replace(/\n/g, '\r');
+    for (const ch of text) {
+      if (ch < ' ' && ch !== '\r') continue;
+      if (this._waiters.length) this._waiters.shift()(ch); else this._buf.push(ch);
+    }
+  }
+
+  async pasteClipboard() {
+    let text;
+    try { text = await navigator.clipboard.readText(); } catch(e) { return; }
+    this.pasteText(text);
+  }
+
   _onKey(e) {
-    // Ctrl+C / Ctrl+Break → abort running program (GW-BASIC Ctrl+Break equivalent)
-    if (e.key === 'Pause' || (e.ctrlKey && (e.key === 'c' || e.key === 'C' || e.key === 'Break' || e.keyCode === 67 || e.keyCode === 19))) {
-      e.preventDefault();
-      this.abort();
-      return;
+    // Ctrl+C double-tap (≤500 ms apart) → CHR$(3). Single Ctrl+C passes to browser (copy).
+    if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
+      const now = Date.now();
+      if (now - this._ctrlCTime <= 500) {
+        e.preventDefault();
+        this._ctrlCTime = 0;
+        this.abort();
+        return;
+      }
+      this._ctrlCTime = now;
+      return; // first press: let browser handle as copy
     }
     const fk = /^F([1-9]|1[0-2])$/.exec(e.key);
     if (fk) {

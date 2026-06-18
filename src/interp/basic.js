@@ -901,9 +901,10 @@ class Basic {
     const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
     while (ip < this.flat.length) {
       const cur = this.flat[ip];
-      // Keep the UI responsive on long synchronous scans: yield to the event loop every ~50ms
-      // (only in the outer loop, not inside GOSUB recursions, to avoid extra overhead).
-      if (!stopOnReturn && nowMs() - lastYield > 50) { await new Promise((r) => setTimeout(r)); lastYield = nowMs(); }
+      // Keep the UI responsive on long synchronous scans: yield to the event loop every ~50ms.
+      // Each run() invocation (outer loop or GOSUB) has its own lastYield, so quick subroutines
+      // never trigger an actual await — only a loop that truly runs >50ms in one call will yield.
+      if (nowMs() - lastYield > 50) { await new Promise((r) => setTimeout(r)); lastYield = nowMs(); }
       // Event traps (ON KEY / ON TIMER): between statements, if armed, fire the handler as an
       // implicit GOSUB. Fires inside GOSUBs too (GW-BASIC does); inTrap blocks re-entry.
       if (!this.inTrap && this.anyTrapOn) {

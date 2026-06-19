@@ -933,7 +933,7 @@ class Basic {
           if (sr.t === 'goto') { ip = this.go(sr.line); continue; }
           if (sr.t === 'return') { if (stopOnReturn) return { t: 'return' }; ip++; continue; }
           if (sr.t === 'end' || sr.t === 'system' || sr.t === 'chain') return sr;
-          if (sr.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; ip = 0; continue; }
+          if (sr.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; if (this.gfx && this.gfx.active()) { this.gfx.screen(0); this.s.gfx = null; this.s.color(7, 0); this.s.cls(); } ip = 0; continue; }
           if (sr.t === 'for') { let _sfi = loops.length - 1; while (_sfi >= 0 && loops[_sfi].var !== sr.var) _sfi--; if (_sfi >= 0) loops.splice(_sfi); this.setVar(sr.var, sr.from); loops.push({ var: sr.var, to: sr.to, step: sr.step, body: ip + 1 }); ip++; continue; }
           if (sr.t === 'next') {
             const _nc = sr.count || 1; let _nb = false;
@@ -960,7 +960,7 @@ class Basic {
         case 'end': return { t: 'end' };
         case 'system': return { t: 'system' };
         case 'chain': return ctl;
-        case 'run': this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; ip = 0; break;
+        case 'run': this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; if (this.gfx && this.gfx.active()) { this.gfx.screen(0); this.s.gfx = null; this.s.color(7, 0); this.s.cls(); } ip = 0; break;
         case 'for':
           // Empty-body delay loop ("FOR x=a TO b : NEXT") — the original's ~1s pause idiom.
           // Run it as a real timed delay so flashed messages are readable.
@@ -987,7 +987,7 @@ class Basic {
                 if (_rem.t === 'end') return { t: 'end' };
                 if (_rem.t === 'system') return { t: 'system' };
                 if (_rem.t === 'chain') return _rem;
-                if (_rem.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; ip = 0; break; }
+                if (_rem.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; if (this.gfx && this.gfx.active()) { this.gfx.screen(0); this.s.gfx = null; this.s.color(7, 0); this.s.cls(); } ip = 0; break; }
               }
             }
             ip++;
@@ -1347,7 +1347,7 @@ class Basic {
         // INKEY$ polls; yield to the event loop so keydown can fire (the GW-BASIC
         // "T$=INKEY$:IF T$=\"\" THEN <loop>" wait-for-key idiom would otherwise hang).
         const up = n.name.toUpperCase();
-        if (up === 'INKEY$') { await new Promise((r) => setTimeout(r)); return this.term.inkey(); }
+        if (up === 'INKEY$') { await new Promise((r) => setTimeout(r, 16)); return this.term.inkey(); }
         if (up === 'RND') return this.rnd();                       // bare RND (no parens)
         if (up === 'ERR') return this.errCode;
         if (up === 'ERL') return this.errLineNo;

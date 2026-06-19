@@ -35,8 +35,9 @@ class Terminal {
   // Deliver one keypress to the next waiter or to _buf.
   // Extended keys are stored as a single 2-char '\x00X' string; inkey() splits them.
   _enqueue(ch) {
-    if (this._waiters.length) this._waiters.shift()(ch);
-    else this._buf.push(ch);
+    const disp = ch => ch.split('').map(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) > 126 ? `\\x${c.charCodeAt(0).toString(16).padStart(2,'0')}` : c).join('');
+    if (this._waiters.length) { console.log(`[key] enqueue→waiter "${disp(ch)}"`); this._waiters.shift()(ch); }
+    else { console.log(`[key] enqueue→buf "${disp(ch)}" buf=${this._buf.length+1}`); this._buf.push(ch); }
   }
 
   _onKey(e) {
@@ -93,17 +94,21 @@ class Terminal {
   // GW-BASIC keyboard-buffer behaviour so games can detect them with two INKEY$ calls.
   inkey() {
     if (this._aborted) throw Object.assign(new Error('ESC'), { name: 'EscapeError' });
+    const disp = c => typeof c === 'string' ? c.split('').map(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) > 126 ? `\\x${c.charCodeAt(0).toString(16).padStart(2,'0')}` : c).join('') : String(c);
     if (this._inkeyPending !== null) {
       const sc = this._inkeyPending;
       this._inkeyPending = null;
+      console.log(`[inkey] pending→"${disp(sc)}"`);
       return sc;
     }
     if (!this._buf.length) return '';
     const ch = this._buf.shift();
     if (typeof ch === 'string' && ch.length === 2 && ch.charCodeAt(0) === 0) {
-      this._inkeyPending = ch[1]; // deliver scan code on next call
+      this._inkeyPending = ch[1];
+      console.log(`[inkey] ext→"\\x00" pending="${disp(ch[1])}" buf=${this._buf.length}`);
       return '\x00';
     }
+    console.log(`[inkey] →"${disp(ch)}" buf=${this._buf.length}`);
     return ch;
   }
 
@@ -125,11 +130,15 @@ class Terminal {
     // Bidirectional stage fence: clear buffer and pending scan-code on the way IN
     // (discards game-loop leftovers before the prompt) and again on the way OUT
     // (prevents keys typed during INPUT from leaking into game-mode INKEY$ reads).
-    const _flushInput = () => {
+    const disp = c => typeof c === 'string' ? c.split('').map(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) > 126 ? `\\x${c.charCodeAt(0).toString(16).padStart(2,'0')}` : c).join('') : String(c);
+    const _flushInput = (label) => {
+      const dropped = this._buf.filter(c => c !== _ESC_SENTINEL).map(disp);
+      if (this._inkeyPending !== null || dropped.length)
+        console.log(`[inputLine] flush(${label}) pending="${disp(this._inkeyPending)}" dropped=[${dropped.map(s=>`"${s}"`).join(',')}]`);
       this._inkeyPending = null;
       this._buf = this._buf.filter(c => c === _ESC_SENTINEL);
     };
-    _flushInput();
+    _flushInput('enter');
     let buf = '';
     for (;;) {
       const ch = await this.nextKey();
@@ -140,14 +149,15 @@ class Terminal {
         if (buf.length) { buf = buf.slice(0, -1); s.col -= 1; s.put(' '); s.col -= 1; s.render(); }
         continue;
       }
-      if (ch < ' ') continue; // control chars and '\x00X' 2-char extended keys
+      if (ch < ' ') { console.log(`[inputLine] skip ctrl "${disp(ch)}"`); continue; }
       buf += ch;
       s.put(ch);
       s.render();
     }
     s.newline();
     s.render();
-    _flushInput(); // clear keys pressed during / just after typing
+    console.log(`[inputLine] result="${buf}"`);
+    _flushInput('exit'); // clear keys pressed during / just after typing
     if (type === 'int') { const v = parseInt(buf, 10); return Number.isNaN(v) ? 0 : v; }
     if (type === 'num') { const v = parseFloat(buf); return Number.isNaN(v) ? 0 : v; }
     return buf;

@@ -79,29 +79,22 @@
   const _scrW = Math.round(_scr.getBoundingClientRect().width);
   const _scrH = Math.round(_scr.getBoundingClientRect().height);
 
-  // outerH is physical/OS-scale (not page-zoom-scaled).
-  // innerH is physical-viewport / DPR (page-zoom-scaled).
-  // outerH − innerH × DPR = actual physical chrome px, constant across any zoom.
-  function _measureCp() {
-    const dpr = window.devicePixelRatio || 1;
-    const oW = window.outerWidth, oH = window.outerHeight;
-    if (oW < 5 || oH < 5) return null;
-    return { w: Math.round(oW - window.innerWidth * dpr),
-             h: Math.round(oH - window.innerHeight * dpr) };
-  }
-
-  let _cp = _measureCp() ?? { w: _st?.cpw ?? 0, h: _st?.cph ?? 0 };
-
+  // Self-calibrating — no platform or DPR guess. resizeTo()/outerWidth use CSS px on some
+  // platforms (macOS) and physical px on others (Windows); the factor that converts between
+  // them is just outerWidth/innerWidth, measured live. In an --app window the horizontal chrome
+  // is ~0, so that ratio is the conversion factor directly (≈1 on macOS, ≈DPR on Windows),
+  // correct for any display density — Retina, HiDPI, or plain — without knowing the OS.
   function fixSize() {
-    const dpr = window.devicePixelRatio || 1;
-    const m = _measureCp();
-    if (m) _cp = m;
-    const w = Math.round(_cp.w + _scrW * dpr);
-    const h = Math.round(_cp.h + _scrH * dpr);
+    const oW = window.outerWidth, oH = window.outerHeight;
+    const iW = window.innerWidth, iH = window.innerHeight;
+    if (oW < 5 || oH < 5 || iW < 5 || iH < 5) return;   // window not laid out yet
+    const f = oW / iW;                                   // window-units per CSS px
+    const w = Math.round(f * _scrW + (oW - f * iW));     // content + horizontal chrome (~0)
+    const h = Math.round(f * _scrH + (oH - f * iH));     // content + title bar
     const sx = window.screenX, sy = window.screenY;
     window.resizeTo(w, h);
     window.moveTo(sx, sy);
-    localStorage.setItem(_SKEY, JSON.stringify({ w, h, cpw: _cp.w, cph: _cp.h }));
+    localStorage.setItem(_SKEY, JSON.stringify({ w, h }));
   }
   if (!_isReload) fixSize();
   window.addEventListener('resize', fixSize);

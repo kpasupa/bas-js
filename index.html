@@ -15,6 +15,13 @@
     descent-override: 47%;
     size-adjust: 91.645%;
   }
+  /* Bundle Consolas so the terminal renders identically on machines without it (macOS, Linux). */
+  @font-face {
+    font-family: 'Consolas';
+    src: url('consola.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+  }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body { display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -101,6 +108,8 @@
     localStorage.setItem(_SKEY, JSON.stringify({ w, h }));
   }
   if (!_isReload) fixSize();
+  // Re-measure once webfonts load: 80ch is measured against the fallback font until then.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fixSize);
   window.addEventListener('resize', () => {
     clearTimeout(_resizeTimer);
     _resizeTimer = setTimeout(fixSize, 150);

@@ -11,7 +11,8 @@ class Terminal {
     this._waiters = [];    // pending nextKey() resolvers
     this._trapBuf = [];    // function-key numbers (F1..F12 -> 1..12) for ON KEY trapping
     this._onKey = this._onKey.bind(this);
-    this._ctrlCTime = 0;  // timestamp of last Ctrl+C — double-tap within 500ms aborts
+    this._ctrlCTime = 0;     // timestamp of last Ctrl+C — double-tap within 500ms aborts
+    this._inkeyPending = null; // scan code held between two INKEY$ calls for an extended key
   }
 
   attach() { window.addEventListener('keydown', this._onKey); }
@@ -31,19 +32,11 @@ class Terminal {
     this.pasteText(text);
   }
 
-  // Enqueue one logical keypress. Extended keys (2-char, null-prefixed) are split into
-  // two separate _buf entries to match real GW-BASIC keyboard-buffer behaviour: games
-  // read CHR$(0) with a first INKEY$ call, then the scan code with a second call.
+  // Deliver one keypress to the next waiter or to _buf.
+  // Extended keys are stored as a single 2-char '\x00X' string; inkey() splits them.
   _enqueue(ch) {
-    if (ch.length === 2 && ch.charCodeAt(0) === 0) {
-      // Deliver null prefix to any waiting INKEY$/INPUT$; scan code always goes to buf.
-      if (this._waiters.length) this._waiters.shift()('\x00');
-      else this._buf.push('\x00');
-      this._buf.push(ch[1]);
-    } else {
-      if (this._waiters.length) this._waiters.shift()(ch);
-      else this._buf.push(ch);
-    }
+    if (this._waiters.length) this._waiters.shift()(ch);
+    else this._buf.push(ch);
   }
 
   _onKey(e) {
@@ -95,10 +88,25 @@ class Terminal {
     });
   }
 
-  inkey() {                                                      // INKEY$
+  // INKEY$: non-blocking poll. Extended keys (stored as '\x00X' 2-char strings) are
+  // returned as two separate calls — CHR$(0) first, then the scan code — matching real
+  // GW-BASIC keyboard-buffer behaviour so games can detect them with two INKEY$ calls.
+  inkey() {
     if (this._aborted) throw Object.assign(new Error('ESC'), { name: 'EscapeError' });
-    return this._buf.length ? this._buf.shift() : '';
+    if (this._inkeyPending !== null) {
+      const sc = this._inkeyPending;
+      this._inkeyPending = null;
+      return sc;
+    }
+    if (!this._buf.length) return '';
+    const ch = this._buf.shift();
+    if (typeof ch === 'string' && ch.length === 2 && ch.charCodeAt(0) === 0) {
+      this._inkeyPending = ch[1]; // deliver scan code on next call
+      return '\x00';
+    }
+    return ch;
   }
+
   async inputKey() { return this.nextKey(); }                   // INPUT$(1)
   nextTrap() { return this._trapBuf.length ? this._trapBuf.shift() : 0; } // ON KEY: next trapped F-key #
 
@@ -114,13 +122,12 @@ class Terminal {
     const s = this.screen;
     if (question) { s.put('? '); s.render(); }
     s.setCursorVisible(true);
-    // Flush leading control chars (incl. \r and extended-key pairs) accumulated during
-    // INKEY$ game loops. Printable chars (≥0x20) are kept as legitimate type-ahead.
-    while (this._buf.length > 0 && this._buf[0].charCodeAt(0) < 32) {
-      const f = this._buf.shift();
-      // Extended key null prefix: also drop the scan code that follows
-      if (f.charCodeAt(0) === 0 && this._buf.length > 0) this._buf.shift();
-    }
+    // Flush any pending extended-key scan code and leading control chars that accumulated
+    // during INKEY$ game loops. 2-char '\x00X' strings in _buf have charCodeAt(0)=0 so
+    // they are caught by the same < 32 check and removed whole. Printable chars (≥0x20)
+    // are kept as legitimate type-ahead.
+    this._inkeyPending = null;
+    while (this._buf.length > 0 && this._buf[0].charCodeAt(0) < 32) this._buf.shift();
     let buf = '';
     for (;;) {
       const ch = await this.nextKey();
@@ -131,11 +138,7 @@ class Terminal {
         if (buf.length) { buf = buf.slice(0, -1); s.col -= 1; s.put(' '); s.col -= 1; s.render(); }
         continue;
       }
-      if (ch < ' ') {
-        // Extended key null prefix: skip the scan code sitting next in _buf
-        if (ch.charCodeAt(0) === 0 && this._buf.length > 0) this._buf.shift();
-        continue;
-      }
+      if (ch < ' ') continue; // remaining control chars and '\x00X' 2-char extended keys
       buf += ch;
       s.put(ch);
       s.render();

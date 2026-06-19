@@ -235,7 +235,7 @@ function draw() {
   const lines = [];
 
   // lines 1-4: header
-  lines.push(hesc('bas-js 1.3.49'));
+  lines.push(hesc('bas-js 1.3.50'));
   lines.push(hesc('(C) Copyright Krit Pasupa'));
   lines.push(hesc('github.com/kpasupa'));
   lines.push('');

@@ -1,6 +1,9 @@
 // Gate UI — file browser / launcher that sits in front of the interpreter.
 // Loaded as the last script in index.html; depends on cp437.js, ku42.js, app.js.
 
+const _origTitle = document.title;  // capture <title> before any program changes it
+let _defaultFavicon = null;
+
 const el      = document.getElementById('screen');
 const gate    = document.getElementById('gate');
 const gatePre = document.getElementById('gate-pre');
@@ -232,7 +235,7 @@ function draw() {
   const lines = [];
 
   // lines 1-4: header
-  lines.push(hesc('bas-js 1.3.37'));
+  lines.push(hesc('bas-js 1.3.39'));
   lines.push(hesc('(C) Copyright Krit Pasupa'));
   lines.push(hesc('github.com/kpasupa'));
   lines.push('');
@@ -535,7 +538,8 @@ function gateKeydown(e) {
 function showGate() {
   gate.style.display = 'flex';
   escHint.style.display = 'none';
-  document.title = 'bas-js';
+  document.title = _origTitle;
+  _setFavicon(_defaultFavicon);
   leftOffset = 0; gateMsg = '';
   if (recentBas) { panel = 'recent'; leftIdx = 0; }
   else            { panel = 'left';   leftIdx = 0; }
@@ -548,7 +552,6 @@ function hideGate() {
   gate.style.display = 'none';
   escHint.style.display = 'block';
   el.focus();
-  document.title = 'bas-js - running';
   window.removeEventListener('keydown', gateKeydown);
 }
 
@@ -559,17 +562,18 @@ window.addEventListener('paste', e => {
   const text = (e.clipboardData || window.clipboardData).getData('text');
   if (text) window._activeTerm.pasteText(text);
 });
-// Right-click paste — only while a program is running (gate keeps normal context menu).
-window.addEventListener('contextmenu', e => {
-  if (!window._activeTerm) return;
-  e.preventDefault();
-  window._activeTerm.pasteClipboard();
-});
+// Right-click paste — disabled.
+// window.addEventListener('contextmenu', e => {
+//   if (!window._activeTerm) return;
+//   e.preventDefault();
+//   window._activeTerm.pasteClipboard();
+// });
 
 // ── init ────────────────────────────────────────────────────────────────────
 (async () => {
   try {
     await loadData();
+    _defaultFavicon = await _detectDefaultFavicon();
     showGate();
     tryAutoRun(); // non-blocking: silently runs recent BAS if permission still live
   } catch(err) {

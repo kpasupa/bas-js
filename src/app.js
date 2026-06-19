@@ -4,6 +4,43 @@
 
 const DEFAULT_BOOT = 'PASSWORD';
 
+// ── favicon helpers ───────────────────────────────────────────────────────────
+let _faviconBlobUrl = null;
+function _setFavicon(url) {
+  if (_faviconBlobUrl) { URL.revokeObjectURL(_faviconBlobUrl); _faviconBlobUrl = null; }
+  let link = document.querySelector('link[rel~="icon"]');
+  if (!url) { if (link) link.remove(); return; }
+  if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
+  if (url.startsWith('blob:')) _faviconBlobUrl = url;
+  link.href = url;
+}
+function _detectDefaultFavicon() {
+  return new Promise(resolve => {
+    const candidates = ['./favicon.ico', './favicon.png'];
+    let i = 0;
+    const tryNext = () => {
+      if (i >= candidates.length) { resolve(null); return; }
+      const img = new Image();
+      img.onload = () => resolve(candidates[i]);
+      img.onerror = () => { i++; tryNext(); };
+      img.src = candidates[i];
+    };
+    tryNext();
+  });
+}
+async function _loadFavicon(basDir) {
+  const dirs = basDir ? [basDir, ''] : [''];
+  for (const dir of dirs) {
+    for (const [ext, mime] of [['ico','image/x-icon'],['png','image/png']]) {
+      try {
+        const data = await readFile(dir + 'favicon.' + ext);
+        if (data && data.length) return URL.createObjectURL(new Blob([data], { type: mime }));
+      } catch {}
+    }
+  }
+  return null;
+}
+
 const loadBas = (name) => { let n = String(name).trim().toUpperCase(); if (n.endsWith('.BAS')) n = n.slice(0, -4); return readText(`${n}.BAS`); };
 
 async function runApp(el, status, boot = DEFAULT_BOOT) {
@@ -25,6 +62,8 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
   let basDir = /[/\\]/.test(prog) ? prog.replace(/[^/\\]*$/, '') : '';
   try {
     while (prog) {
+      document.title = prog.replace(/.*[/\\]/, '').toUpperCase() + '.BAS';
+      _setFavicon(await _loadFavicon(basDir));
       const src = await loadBas(prog);
       if (src == null) {
         console.error(`[bas] program "${prog}.BAS" not found in folder`);

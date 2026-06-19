@@ -21,7 +21,7 @@ No server, no build step, no install.
 
 ## Project gate
 
-The gate (`index.html`) manages multiple projects. Each project has:
+The gate (`src/gate.js`) manages multiple projects. Each project has:
 
 | Field | Description |
 |---|---|
@@ -40,6 +40,10 @@ The gate (`index.html`) manages multiple projects. Each project has:
 ### ESC key
 
 Press **ESC** while a program is running to stop it and return to the gate.
+
+### Tab title and favicon
+
+While a program is running the browser tab title is set to `FILENAME.BAS`. On return to the gate it reverts to the page `<title>`. If the project folder (or its parent) contains `favicon.ico` or `favicon.png` it is used as the tab icon while that program runs; on return to the gate the icon reverts to the project-level favicon (detected automatically from `./favicon.ico` → `./favicon.png` at startup).
 
 ---
 
@@ -74,7 +78,7 @@ function yourEncode(u) {
 <script src="src/codec/yourcodec.js"></script>
 ```
 
-**3. Wire it up** — in `index.html`'s inline script, add your codec to the selector and the `window._bas_codec` assignment:
+**3. Wire it up** — in `src/gate.js`, add your codec to the selector and the `window._bas_codec` assignment:
 ```js
 // in the encoding dropdown
 <option value="yours">Your encoding name</option>
@@ -126,17 +130,18 @@ Hardware keywords (PEEK/POKE/CALL/INP/OUT/WAIT/VARPTR) and editor commands (LIST
 ## File layout
 
 ```
-index.html              gate UI + terminal shell + graphics canvas
+index.html              shell — loads scripts, sizes window
 interpreter.html        keyword-by-keyword coverage map (done / partial / dummy / skip)
-picker.html             standalone project manager (optional)
 run.bat                 Windows launcher (dedicated browser profile)
 run.sh                  macOS/Linux launcher
+favicon.ico / .png      optional default tab icon (auto-detected at startup)
 sample/
   INTERPRETER.BAS       command test menu (BASIC / GW-BASIC, one demo per keyword group)
   BASIC/ GWBASIC/       the nested menu + demo programs it CHAINs to
-  APP.BAS  MATH.BAS     small CHAIN demo
+  MENU.BAS  MATH.BAS    small CHAIN demo
 src/
-  app.js                boot loop + folder connect + gfx/audio wiring
+  gate.js               project browser/launcher UI — file picker, folder list, run
+  app.js                boot loop + tab title/favicon + gfx/audio wiring
   interp/basic.js       GW-BASIC interpreter (tokenizer, parser, runtime)
   term/
     screen.js           80×25 CGA terminal (16 colors, blink, cursor, transparent-cell overlay)

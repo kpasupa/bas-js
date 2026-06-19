@@ -930,7 +930,7 @@ class Basic {
         const sr = this.execS(cur);
         if (sr !== _S) {
           if (!sr) { ip++; continue; }
-          if (sr.t === 'goto') { if (escapeBelow >= 0 && sr.line < escapeBelow) return { t: 'goto', line: sr.line }; ip = this.go(sr.line); continue; }
+          if (sr.t === 'goto') { if (escapeBelow >= 0 && sr.line < escapeBelow) return { t: 'goto', line: sr.line }; if (this.anyTrapOn && sr.line < this.flatLines[ip]) { await new Promise((r) => setTimeout(r, 33)); lastYield = nowMs(); } ip = this.go(sr.line); continue; }
           if (sr.t === 'return') { if (stopOnReturn) return { t: 'return' }; ip++; continue; }
           if (sr.t === 'end' || sr.t === 'system' || sr.t === 'chain') return sr;
           if (sr.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; if (this.gfx && this.gfx.active()) { this.gfx.screen(0); this.s.gfx = null; this.s.color(7, 0); this.s.cls(); } ip = 0; continue; }
@@ -955,7 +955,7 @@ class Basic {
       const ctl = await this.exec(this.flat[ip]);
       if (!ctl) { ip++; continue; }
       switch (ctl.t) {
-        case 'goto': if (escapeBelow >= 0 && ctl.line < escapeBelow) return { t: 'goto', line: ctl.line }; ip = this.go(ctl.line); break;
+        case 'goto': if (escapeBelow >= 0 && ctl.line < escapeBelow) return { t: 'goto', line: ctl.line }; if (this.anyTrapOn && ctl.line < this.flatLines[ip]) { await new Promise((r) => setTimeout(r, 33)); lastYield = nowMs(); } ip = this.go(ctl.line); break;
         case 'return': if (stopOnReturn) return { t: 'return' }; ip++; break;
         case 'end': return { t: 'end' };
         case 'system': return { t: 'system' };

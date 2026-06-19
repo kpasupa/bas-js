@@ -896,7 +896,7 @@ class Basic {
   // Execute from a flat index. GOSUB recurses (so the rest of an IF…THEN branch resumes
   // after RETURN); a recursive call with stopOnReturn=true returns on RETURN. FOR/NEXT use a
   // loop stack local to each invocation. Returns the terminating signal (end/system/chain).
-  async run(fromIp, stopOnReturn, stopOnGoto = false) {
+  async run(fromIp, stopOnReturn, escapeBelow = -1) {
     const loops = []; let ip = fromIp; let lastYield = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
     while (ip < this.flat.length) {
@@ -911,7 +911,7 @@ class Basic {
         const tl = this._checkTraps();
         if (tl) {
           this.inTrap = true; this._inTrapChain = true;
-          try { const tr = await this.run(this.go(tl), true, true); if (tr && (tr.t === 'end' || tr.t === 'system' || tr.t === 'chain')) return tr; if (tr && tr.t === 'goto') { ip = this.go(tr.line); } }
+          try { const tr = await this.run(this.go(tl), true, tl); if (tr && (tr.t === 'end' || tr.t === 'system' || tr.t === 'chain')) return tr; if (tr && tr.t === 'goto') { ip = this.go(tr.line); } }
           finally { this.inTrap = false; this._inTrapChain = false; }
           continue;
         }
@@ -930,7 +930,7 @@ class Basic {
         const sr = this.execS(cur);
         if (sr !== _S) {
           if (!sr) { ip++; continue; }
-          if (sr.t === 'goto') { if (stopOnGoto) return { t: 'goto', line: sr.line }; ip = this.go(sr.line); continue; }
+          if (sr.t === 'goto') { if (escapeBelow >= 0 && sr.line < escapeBelow) return { t: 'goto', line: sr.line }; ip = this.go(sr.line); continue; }
           if (sr.t === 'return') { if (stopOnReturn) return { t: 'return' }; ip++; continue; }
           if (sr.t === 'end' || sr.t === 'system' || sr.t === 'chain') return sr;
           if (sr.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; if (this.gfx && this.gfx.active()) { this.gfx.screen(0); this.s.gfx = null; this.s.color(7, 0); this.s.cls(); } ip = 0; continue; }
@@ -955,7 +955,7 @@ class Basic {
       const ctl = await this.exec(this.flat[ip]);
       if (!ctl) { ip++; continue; }
       switch (ctl.t) {
-        case 'goto': if (stopOnGoto) return { t: 'goto', line: ctl.line }; ip = this.go(ctl.line); break;
+        case 'goto': if (escapeBelow >= 0 && ctl.line < escapeBelow) return { t: 'goto', line: ctl.line }; ip = this.go(ctl.line); break;
         case 'return': if (stopOnReturn) return { t: 'return' }; ip++; break;
         case 'end': return { t: 'end' };
         case 'system': return { t: 'system' };
@@ -982,7 +982,7 @@ class Basic {
             if (ctl.remainder?.length) {
               const _rem = await this.runStatements(ctl.remainder);
               if (_rem) {
-                if (_rem.t === 'goto') { if (stopOnGoto) return { t: 'goto', line: _rem.line }; ip = this.go(_rem.line); break; }
+                if (_rem.t === 'goto') { if (escapeBelow >= 0 && _rem.line < escapeBelow) return { t: 'goto', line: _rem.line }; ip = this.go(_rem.line); break; }
                 if (_rem.t === 'return') { if (stopOnReturn) return { t: 'return' }; ip++; break; }
                 if (_rem.t === 'end') return { t: 'end' };
                 if (_rem.t === 'system') return { t: 'system' };
@@ -1058,7 +1058,7 @@ class Basic {
       case 'return': return { t: 'return' };
       case 'run': return { t: 'run' };
       case 'goto': return { t: 'goto', line: st.line };
-      case 'gosub': { const r = await this.run(this.go(st.line), true, this._inTrapChain); return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain' || r.t === 'run' || r.t === 'goto') ? r : null; }
+      case 'gosub': { const r = await this.run(this.go(st.line), true, this._inTrapChain ? st.line : -1); return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain' || r.t === 'run' || r.t === 'goto') ? r : null; }
       case 'chain': {
         const name = String(await this.evl(st.name));
         const keepV = {}; for (const k of this.commonVars) if (k in this.vars) keepV[k] = this.vars[k];   // CHAIN passes ONLY
@@ -1089,7 +1089,7 @@ class Basic {
         if (idx < 1 || idx > st.lines.length) return null;        // out of range → fall through
         const target = st.lines[idx - 1];
         if (!st.gosub) return { t: 'goto', line: target };
-        const r = await this.run(this.go(target), true, this._inTrapChain);  // ON..GOSUB: call, then continue
+        const r = await this.run(this.go(target), true, this._inTrapChain ? target : -1);  // ON..GOSUB: call, then continue
         return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain' || r.t === 'run' || r.t === 'goto') ? r : null;
       }
       case 'print': return st.fileno != null ? this.doFilePrint(st) : this.doPrint(st);

@@ -223,7 +223,7 @@ class Graphics {
   putImage(x, y, img, mode) {
     if (!img || !img.data) return;
     const [px, py] = this._map(x, y), X = Math.round(px), Y = Math.round(py);
-    const md = mode ? String(mode).toUpperCase() : 'PSET';
+    const md = mode ? String(mode).toUpperCase() : 'XOR'; // GW-BASIC default PUT action is XOR (self-inverse: PUT draws, PUT again erases)
     if (md === 'PSET') {
       for (let r = 0; r < img.h; r++) for (let cc = 0; cc < img.w; cc++) this._put(X + cc, Y + r, img.data[r * img.w + cc]);
     } else {

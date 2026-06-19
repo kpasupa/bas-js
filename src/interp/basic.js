@@ -821,7 +821,7 @@ class Basic {
         if (i < 1 || i > st.lines.length) return null;
         return { t: 'goto', line: st.lines[i - 1] };
       }
-      case 'print': return st.fileno != null ? _S : this.doPrintS(st);   // file print → async
+      case 'print': return (st.fileno != null || this._inTrapChain) ? _S : this.doPrintS(st);   // file print or trap-chain → async (trap-chain adds yield for laser animation)
       case 'for': { const f = this.evlS(st.from); if (f === _S) return _S; const t = this.evlS(st.to); if (t === _S) return _S; const sp = this.evlS(st.step); if (sp === _S) return _S; return { t: 'for', var: st.var, from: num(f), to: num(t), step: num(sp) }; }
       case 'while': { const v = this.evlS(st.cond); if (v === _S) return _S; return { t: 'while', truth: truthy(v), node: st }; }
       case 'wend': return { t: 'wend', node: st };
@@ -1126,7 +1126,7 @@ class Basic {
         return null;
       }
       case 'close': return this.closeFile(st.fileno);
-      case 'clear': { this.vars = {}; this.arrays = {}; await this.closeFile(null); return null; } // reset state; size args no-op
+      case 'clear': { this.vars = {}; this.arrays = {}; await this.closeFile(null); this.trapKey = {}; this.trapKeyState = {}; this.anyTrapOn = false; if (this.term && this.term._trapBuf) this.term._trapBuf.length = 0; return null; } // reset state; size args no-op
       case 'sound': { const f = num(await this.evl(st.freq)), d = num(await this.evl(st.dur)); if (this.audio) await this.audio.sound(f, d); return null; }
       case 'play': { const s = String(await this.evl(st.str)); if (this.audio) await this.audio.play(s); return null; }
       case 'width': { const n = num(await this.evl(st.cols)); this.s.setTextCols(n === 40 ? 40 : 80); return null; }
@@ -1300,6 +1300,7 @@ class Basic {
     }
     if (st.trailing !== ';') s.newline();
     s.render();
+    if (this._inTrapChain) await new Promise((r) => setTimeout(r, 5));
   }
 
   // LPRINT → the virtual printer. Raw values are passed through (the printer strips ESC/P,

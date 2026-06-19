@@ -105,6 +105,8 @@
     const f = oW / iW;
     const r = _scr.getBoundingClientRect();
     const scrW = Math.round(r.width), scrH = Math.round(r.height);
+    // Snap to integer px — 80ch is fractional (e.g. 807.33 ↔ 808.67) and causes infinite resize loop
+    if (r.width !== scrW) { _scr.style.width = scrW + 'px'; document.getElementById('gate-pre').style.width = scrW + 'px'; }
     const w = Math.round(f * scrW + (oW - f * iW));
     const h = Math.round(f * scrH + (oH - f * iH));
     if (Math.abs(w - oW) <= 1 && Math.abs(h - oH) <= 1) return;

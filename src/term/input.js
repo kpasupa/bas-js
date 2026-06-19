@@ -44,19 +44,23 @@ class Terminal {
       this._ctrlCTime = now;
       return; // first press: let browser handle as copy
     }
-    const fk = /^F([1-9]|1[0-2])$/.exec(e.key);
+    const fk = /^F([1-9]|10)$/.exec(e.key);  // F11/F12 pass to browser (DevTools, fullscreen)
     if (fk) {
       e.preventDefault();
       const n = parseInt(fk[1], 10);
-      this._trapBuf.push(n);
-      if (n >= 1 && n <= 10) {                              // F1=CHR$(59)..F10=CHR$(68)
-        const ch = '\x00' + String.fromCharCode(58 + n);
-        if (this._waiters.length) this._waiters.shift()(ch); else this._buf.push(ch);
-      }
+      if (!e.shiftKey) this._trapBuf.push(n);               // ON KEY traps unshifted F-keys only
+      const scan = e.shiftKey ? 83 + n : 58 + n;            // Shift+F1=84..Shift+F10=93; F1=59..F10=68
+      const ch = '\x00' + String.fromCharCode(scan);
+      if (this._waiters.length) this._waiters.shift()(ch); else this._buf.push(ch);
       return;
     }
     let ch = null;
-    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) ch = e.key;
+    if (e.ctrlKey && e.key.length === 1) {
+      const k = e.key.toLowerCase();
+      if ('wtnr'.includes(k)) return;                        // let browser keep Ctrl+W/T/N/R
+      const n = k.charCodeAt(0) - 96;
+      if (n >= 1 && n <= 26) ch = String.fromCharCode(n);   // Ctrl+A=CHR$(1)..Ctrl+Z=CHR$(26)
+    } else if (e.key.length === 1 && !e.altKey && !e.metaKey) ch = e.key;
     else if (e.key === 'Enter')      ch = '\r';
     else if (e.key === 'Backspace')  ch = '\b';
     else if (e.key === 'Tab')        ch = '\t';              // CHR$(9)

@@ -57,7 +57,7 @@ class Terminal {
     let ch = null;
     if (e.ctrlKey && e.key.length === 1) {
       const k = e.key.toLowerCase();
-      if ('wtnr'.includes(k)) return;                        // let browser keep Ctrl+W/T/N/R
+      if ('wtnrv'.includes(k)) return;                       // let browser keep Ctrl+W/T/N/R/V(paste)
       const n = k.charCodeAt(0) - 96;
       if (n >= 1 && n <= 26) ch = String.fromCharCode(n);   // Ctrl+A=CHR$(1)..Ctrl+Z=CHR$(26)
     } else if (e.key.length === 1 && !e.altKey && !e.metaKey) ch = e.key;

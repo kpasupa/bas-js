@@ -99,7 +99,10 @@
   // correct for any display density — Retina, HiDPI, or plain — without knowing the OS.
   let _resizeTimer = null;
   function fixSize() {
-    if (document.fullscreenElement || document.webkitFullscreenElement) return;
+    // Skip resize if any fullscreen is active: programmatic (fullscreenElement) OR
+    // F11 browser fullscreen (window fills the entire screen — fullscreenElement stays null).
+    if (document.fullscreenElement || document.webkitFullscreenElement ||
+        (window.outerWidth === screen.width && window.outerHeight === screen.height)) return;
     const oW = window.outerWidth, oH = window.outerHeight;
     const iW = window.innerWidth, iH = window.innerHeight;
     if (oW < 5 || oH < 5 || iW < 5 || iH < 5) return;

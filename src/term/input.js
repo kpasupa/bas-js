@@ -103,6 +103,10 @@ class Terminal {
     const s = this.screen;
     if (question) { s.put('? '); s.render(); }
     s.setCursorVisible(true);
+    // Flush leading control chars (incl. \r and \x00-prefixed extended keys) that
+    // accumulated in the buffer during INKEY$ game loops before this INPUT prompt.
+    // Printable chars (≥0x20) are kept as legitimate type-ahead.
+    while (this._buf.length > 0 && this._buf[0].charCodeAt(0) < 32) this._buf.shift();
     let buf = '';
     for (;;) {
       const ch = await this.nextKey();

@@ -1178,7 +1178,7 @@ class Basic {
       case 'gwindow': { if (this.gfx) { if (st.x1 == null) this.gfx.setWindow(); else this.gfx.setWindow(num(await this.evl(st.x1)), num(await this.evl(st.y1)), num(await this.evl(st.x2)), num(await this.evl(st.y2))); } return null; }
       case 'gview': { if (this.gfx) { if (st.x1 == null) this.gfx.setView(); else this.gfx.setView(num(await this.evl(st.x1)), num(await this.evl(st.y1)), num(await this.evl(st.x2)), num(await this.evl(st.y2))); } return null; }
       case 'gget': { if (this.gfx) { const img = this.gfx.getImage(num(await this.evl(st.x1)), num(await this.evl(st.y1)), num(await this.evl(st.x2)), num(await this.evl(st.y2))); (this.gfxStore || (this.gfxStore = {}))[this.varKey(st.arr)] = img; } return null; }
-      case 'gput': { if (this.gfx) this.gfx.putImage(num(await this.evl(st.x)), num(await this.evl(st.y)), (this.gfxStore || {})[this.varKey(st.arr)]); return null; }
+      case 'gput': { if (this.gfx) this.gfx.putImage(num(await this.evl(st.x)), num(await this.evl(st.y)), (this.gfxStore || {})[this.varKey(st.arr)], st.pmode); return null; }
       case 'draw': { if (this.gfx) this.gfx.draw(String(await this.evl(st.str))); return null; }
       case 'viewprint': return null;   // text scroll window — accepted, no-op on a fixed full screen
       case 'files': {

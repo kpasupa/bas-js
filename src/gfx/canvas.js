@@ -220,10 +220,30 @@ class Graphics {
     for (let r = 0; r < h; r++) for (let cc = 0; cc < w; cc++) { const px = X + cc, py = Y + r; data[r * w + cc] = (px >= 0 && py >= 0 && px < this.W && py < this.H) ? this.buf[py * this.W + px] : 0; }
     return { w, h, data };
   }
-  putImage(x, y, img) {
+  putImage(x, y, img, mode) {
     if (!img || !img.data) return;
     const [px, py] = this._map(x, y), X = Math.round(px), Y = Math.round(py);
-    for (let r = 0; r < img.h; r++) for (let cc = 0; cc < img.w; cc++) this._put(X + cc, Y + r, img.data[r * img.w + cc]);
+    const md = mode ? String(mode).toUpperCase() : 'PSET';
+    if (md === 'PSET') {
+      for (let r = 0; r < img.h; r++) for (let cc = 0; cc < img.w; cc++) this._put(X + cc, Y + r, img.data[r * img.w + cc]);
+    } else {
+      const mask = this.ncol - 1;
+      for (let r = 0; r < img.h; r++) for (let cc = 0; cc < img.w; cc++) {
+        const px2 = X + cc, py2 = Y + r;
+        if (px2 < 0 || py2 < 0 || px2 >= this.W || py2 >= this.H) continue;
+        const src = this._ci(img.data[r * img.w + cc]);
+        const idx = py2 * this.W + px2;
+        let ci;
+        if (md === 'XOR')    ci = (this.buf[idx] ^ src) & mask;
+        else if (md === 'AND') ci = (this.buf[idx] & src) & mask;
+        else if (md === 'OR')  ci = (this.buf[idx] | src) & mask;
+        else if (md === 'PRESET') ci = (~src) & mask;
+        else ci = src & mask; // unknown → PSET
+        const rgb = this.colors[ci] || CGA16[ci & 15];
+        const o = idx * 4;
+        this.buf[idx] = ci; this.img.data[o] = rgb[0]; this.img.data[o + 1] = rgb[1]; this.img.data[o + 2] = rgb[2]; this.img.data[o + 3] = 255;
+      }
+    }
     this.blit();
   }
 

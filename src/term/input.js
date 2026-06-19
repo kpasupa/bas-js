@@ -11,7 +11,7 @@ class Terminal {
     this._waiters = [];    // pending nextKey() resolvers
     this._trapBuf = [];    // function-key numbers (F1..F12 -> 1..12) for ON KEY trapping
     this._onKey = this._onKey.bind(this);
-    this._ctrlCTime = 0;   // timestamp of last Ctrl+C — double-tap within 500ms aborts
+    this._ctrlCTime = 0;  // timestamp of last Ctrl+C — double-tap within 500ms aborts
   }
 
   attach() { window.addEventListener('keydown', this._onKey); }
@@ -29,14 +29,6 @@ class Terminal {
     let text;
     try { text = await navigator.clipboard.readText(); } catch(e) { return; }
     this.pasteText(text);
-  }
-
-  // Deliver one keypress to the next waiter or to _buf.
-  // Extended keys are stored as a single 2-char '\x00X' string.
-  _enqueue(ch) {
-    const disp = ch => ch.split('').map(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) > 126 ? `\\x${c.charCodeAt(0).toString(16).padStart(2,'0')}` : c).join('');
-    if (this._waiters.length) { console.log(`[key] enqueue→waiter "${disp(ch)}"`); this._waiters.shift()(ch); }
-    else { console.log(`[key] enqueue→buf "${disp(ch)}" buf=${this._buf.length+1}`); this._buf.push(ch); }
   }
 
   _onKey(e) {
@@ -57,28 +49,32 @@ class Terminal {
       e.preventDefault();
       const n = parseInt(fk[1], 10);
       this._trapBuf.push(n);
-      if (n >= 1 && n <= 10) this._enqueue('\x00' + String.fromCharCode(58 + n)); // F1=CHR$(59)..F10=CHR$(68)
+      if (n >= 1 && n <= 10) {                              // F1=CHR$(59)..F10=CHR$(68)
+        const ch = '\x00' + String.fromCharCode(58 + n);
+        if (this._waiters.length) this._waiters.shift()(ch); else this._buf.push(ch);
+      }
       return;
     }
     let ch = null;
     if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) ch = e.key;
     else if (e.key === 'Enter')      ch = '\r';
     else if (e.key === 'Backspace')  ch = '\b';
-    else if (e.key === 'Tab')        ch = '\t';               // CHR$(9)
-    else if (e.key === 'Escape')     ch = '\x1b';             // CHR$(27)
+    else if (e.key === 'Tab')        ch = '\t';              // CHR$(9)
+    else if (e.key === 'Escape')     ch = '\x1b';            // CHR$(27)
     else if (e.key === 'ArrowUp')    { ch = '\x00H'; this._trapBuf.push(11); }  // KEY(11)
     else if (e.key === 'ArrowDown')  { ch = '\x00P'; this._trapBuf.push(14); }  // KEY(14)
     else if (e.key === 'ArrowLeft')  { ch = e.ctrlKey ? '\x00s' : '\x00K'; this._trapBuf.push(12); }  // KEY(12)
     else if (e.key === 'ArrowRight') { ch = e.ctrlKey ? '\x00t' : '\x00M'; this._trapBuf.push(13); }  // KEY(13)
-    else if (e.key === 'Home')       ch = e.ctrlKey ? '\x00w' : '\x00G';    // CHR$(119) / CHR$(71)
-    else if (e.key === 'End')        ch = e.ctrlKey ? '\x00u' : '\x00O';    // CHR$(117) / CHR$(79)
+    else if (e.key === 'Home')       ch = e.ctrlKey ? '\x00w' : '\x00G';   // CHR$(119) / CHR$(71)
+    else if (e.key === 'End')        ch = e.ctrlKey ? '\x00u' : '\x00O';   // CHR$(117) / CHR$(79)
     else if (e.key === 'PageUp')     ch = e.ctrlKey ? '\x00\x84' : '\x00I'; // CHR$(132) / CHR$(73)
-    else if (e.key === 'PageDown')   ch = e.ctrlKey ? '\x00v' : '\x00Q';    // CHR$(118) / CHR$(81)
-    else if (e.key === 'Insert')     ch = '\x00R';            // CHR$(0)+CHR$(82)
-    else if (e.key === 'Delete')     ch = '\x00S';            // CHR$(0)+CHR$(83)
+    else if (e.key === 'PageDown')   ch = e.ctrlKey ? '\x00v' : '\x00Q';   // CHR$(118) / CHR$(81)
+    else if (e.key === 'Insert')     ch = '\x00R';           // CHR$(0)+CHR$(82)
+    else if (e.key === 'Delete')     ch = '\x00S';           // CHR$(0)+CHR$(83)
     if (ch === null) return;
     e.preventDefault();
-    this._enqueue(ch);
+    if (this._waiters.length) this._waiters.shift()(ch);
+    else this._buf.push(ch);
   }
 
   nextKey() {
@@ -88,21 +84,15 @@ class Terminal {
     });
   }
 
-  // INKEY$: non-blocking poll. Returns '' if no key waiting.
-  // Extended keys (stored as '\x00X' 2-char strings) are returned as a single 2-char
-  // string, matching real GW-BASIC INKEY$ behaviour — games compare e.g.
-  // IF K$=CHR$(0)+CHR$(72) or use ASC(RIGHT$(K$,1)) to read the scan code.
+  // INKEY$: non-blocking poll. Extended keys (2-char '\x00X' strings) are returned as-is
+  // in one call — matches real GW-BASIC where IF K$=CHR$(0)+CHR$(72) checks the full string.
   inkey() {
     if (this._aborted) throw Object.assign(new Error('ESC'), { name: 'EscapeError' });
-    if (!this._buf.length) return '';
-    const ch = this._buf.shift();
-    const disp = c => typeof c === 'string' ? c.split('').map(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) > 126 ? `\\x${c.charCodeAt(0).toString(16).padStart(2,'0')}` : c).join('') : String(c);
-    console.log(`[inkey] →"${disp(ch)}" buf=${this._buf.length}`);
-    return ch;
+    return this._buf.length ? this._buf.shift() : '';
   }
 
   // INPUT$(n): reads exactly one character at a time. Extended keys (2-char '\x00X')
-  // are split: first call returns CHR$(0), second call returns the scan code.
+  // are split: first call returns CHR$(0), next call returns the scan code.
   async inputKey() {
     const ch = await this.nextKey();
     if (typeof ch === 'string' && ch.length === 2 && ch.charCodeAt(0) === 0) {
@@ -126,20 +116,9 @@ class Terminal {
     const s = this.screen;
     if (question) { s.put('? '); s.render(); }
     s.setCursorVisible(true);
-    const disp = c => typeof c === 'string' ? c.split('').map(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) > 126 ? `\\x${c.charCodeAt(0).toString(16).padStart(2,'0')}` : c).join('') : String(c);
-    const isExt = c => typeof c === 'string' && c.length === 2 && c.charCodeAt(0) === 0;
-    // Entry fence: remove extended game-control keys (\x00X 2-char strings) from buf
-    // and clear _trapBuf so ON KEY events from gameplay don't fire during INPUT.
-    // Printable chars and \r are kept — they may be answers the user typed just before
-    // the prompt appeared, or Y+Enter typed while still pressing game controls.
-    // The loop's `ch < ' '` check handles any extended keys that arrive as waiters.
-    {
-      const dropped = this._buf.filter(c => c !== _ESC_SENTINEL && isExt(c));
-      if (dropped.length || this._trapBuf.length)
-        console.log(`[inputLine] flush(enter) dropped=[${dropped.map(c=>`"${disp(c)}"`).join(',')}] traps=[${this._trapBuf.join(',')}]`);
-      this._buf = this._buf.filter(c => c === _ESC_SENTINEL || !isExt(c));
-      this._trapBuf = [];
-    }
+    // Clear _trapBuf on the way in so ON KEY events fired during gameplay (arrows, F-keys)
+    // don't trigger game handlers immediately after INPUT returns.
+    this._trapBuf = [];
     let buf = '';
     for (;;) {
       const ch = await this.nextKey();
@@ -150,23 +129,15 @@ class Terminal {
         if (buf.length) { buf = buf.slice(0, -1); s.col -= 1; s.put(' '); s.col -= 1; s.render(); }
         continue;
       }
-      if (ch < ' ') { console.log(`[inputLine] skip ctrl "${disp(ch)}"`); continue; }
+      if (ch < ' ') continue; // skip extended keys (\x00X) and other control chars
       buf += ch;
       s.put(ch);
       s.render();
     }
     s.newline();
     s.render();
-    console.log(`[inputLine] result="${buf}"`);
-    // Exit fence: drop everything so keys typed during INPUT don't leak into game INKEY$
-    // or trigger ON KEY GOSUB handlers (cleared via _trapBuf).
-    {
-      const dropped = this._buf.filter(c => c !== _ESC_SENTINEL);
-      if (dropped.length || this._trapBuf.length)
-        console.log(`[inputLine] flush(exit) dropped=[${dropped.map(c=>`"${disp(c)}"`).join(',')}] traps=[${this._trapBuf.join(',')}]`);
-      this._buf = this._buf.filter(c => c === _ESC_SENTINEL);
-      this._trapBuf = [];
-    }
+    // Clear _trapBuf on the way out so keys pressed during INPUT don't leak into game handlers.
+    this._trapBuf = [];
     if (type === 'int') { const v = parseInt(buf, 10); return Number.isNaN(v) ? 0 : v; }
     if (type === 'num') { const v = parseFloat(buf); return Number.isNaN(v) ? 0 : v; }
     return buf;

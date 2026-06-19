@@ -99,14 +99,13 @@
   // correct for any display density — Retina, HiDPI, or plain — without knowing the OS.
   let _resizeTimer = null;
   function fixSize() {
+    if (document.fullscreenElement || document.webkitFullscreenElement) return;
     const oW = window.outerWidth, oH = window.outerHeight;
     const iW = window.innerWidth, iH = window.innerHeight;
     if (oW < 5 || oH < 5 || iW < 5 || iH < 5) return;
     const f = oW / iW;
     const r = _scr.getBoundingClientRect();
     const scrW = Math.round(r.width), scrH = Math.round(r.height);
-    // Snap to integer px — 80ch is fractional (e.g. 807.33 ↔ 808.67) and causes infinite resize loop
-    if (r.width !== scrW) { _scr.style.width = scrW + 'px'; document.getElementById('gate-pre').style.width = scrW + 'px'; }
     const w = Math.round(f * scrW + (oW - f * iW));
     const h = Math.round(f * scrH + (oH - f * iH));
     if (Math.abs(w - oW) <= 1 && Math.abs(h - oH) <= 1) return;
@@ -122,6 +121,9 @@
     clearTimeout(_resizeTimer);
     _resizeTimer = setTimeout(fixSize, 150);
   });
+  // Resume auto-sizing when exiting fullscreen (F11 or programmatic).
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) fixSize(); });
+  document.addEventListener('webkitfullscreenchange', () => { if (!document.webkitFullscreenElement) fixSize(); });
   window.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
 </script>
 

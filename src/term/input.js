@@ -12,6 +12,7 @@ class Terminal {
     this._trapBuf = [];    // function-key numbers (F1..F12 -> 1..12) for ON KEY trapping
     this._onKey = this._onKey.bind(this);
     this._ctrlCTime = 0;  // timestamp of last Ctrl+C — double-tap within 500ms aborts
+    this._ctrlVTime = 0;  // timestamp of last Ctrl+V — double-tap within 500ms sends CHR$(22)
   }
 
   attach() { window.addEventListener('keydown', this._onKey); }
@@ -44,6 +45,19 @@ class Terminal {
       this._ctrlCTime = now;
       return; // first press: let browser handle as copy
     }
+    // Ctrl+V double-tap (≤500 ms apart) → CHR$(22). Single Ctrl+V passes to browser (paste).
+    if (e.ctrlKey && (e.key === 'v' || e.key === 'V')) {
+      const now = Date.now();
+      if (now - this._ctrlVTime <= 500) {
+        e.preventDefault();
+        this._ctrlVTime = 0;
+        const ch = '\x16';
+        if (this._waiters.length) this._waiters.shift()(ch); else this._buf.push(ch);
+        return;
+      }
+      this._ctrlVTime = now;
+      return; // first press: let browser handle as paste
+    }
     const fk = /^F([1-9]|10)$/.exec(e.key);  // F11/F12 pass to browser (DevTools, fullscreen)
     if (fk) {
       e.preventDefault();
@@ -57,7 +71,7 @@ class Terminal {
     let ch = null;
     if (e.ctrlKey && e.key.length === 1) {
       const k = e.key.toLowerCase();
-      if ('wtnrv'.includes(k)) return;                       // let browser keep Ctrl+W/T/N/R/V(paste)
+      if ('wtnr'.includes(k)) return;                        // let browser keep Ctrl+W/T/N/R
       const n = k.charCodeAt(0) - 96;
       if (n >= 1 && n <= 26) ch = String.fromCharCode(n);   // Ctrl+A=CHR$(1)..Ctrl+Z=CHR$(26)
     } else if (e.key.length === 1 && !e.altKey && !e.metaKey) ch = e.key;

@@ -568,7 +568,7 @@ function putCtrl(sink, raw) {
 // ── interpreter ───────────────────────────────────────────────────────────────
 class Basic {
   constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.arrays = {}; this.optionBase = 0; this.defType = {}; this.fns = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.commonArrs = new Set(); this.onPrintReady = null; this.audio = null; this.gfx = null; this.rndState = 0x2545f4914f6cdd1d & 0xffffffff; this.rndLast = 0; this.onErrorLine = 0; this.errCode = 0; this.errLineNo = 0; this.errIp = 0; this.trace = false; this.defSeg = 0;
-    this.trapKey = {}; this.trapKeyState = {}; this.timerLine = 0; this.timerSec = 0; this.timerState = 'OFF'; this.timerLast = 0; this.inTrap = false; this.anyTrapOn = false; }
+    this.trapKey = {}; this.trapKeyState = {}; this.timerLine = 0; this.timerSec = 0; this.timerState = 'OFF'; this.timerLast = 0; this.inTrap = false; this.anyTrapOn = false; this._inTrapChain = false; }
 
   _now() { return (typeof performance !== 'undefined' ? performance.now() : Date.now()); } // overridable in tests
   _updateTrapFlag() { this.anyTrapOn = this.timerState === 'ON' || Object.keys(this.trapKeyState).some((k) => this.trapKeyState[k] === 'ON'); }
@@ -693,7 +693,7 @@ class Basic {
 
     this.go = (ln) => { if (!(ln in this.lineStart)) throw new Error('Undefined line ' + ln); return this.lineStart[ln]; };
     this.onErrorLine = 0;  // ON ERROR / traps do not carry over across CHAIN (GW-BASIC behaviour)
-    this.trapKey = {}; this.trapKeyState = {}; this.anyTrapOn = false; this.inTrap = false;
+    this.trapKey = {}; this.trapKeyState = {}; this.anyTrapOn = false; this.inTrap = false; this._inTrapChain = false;
     this.timerLine = 0; this.timerSec = 0; this.timerState = 'OFF';
     return this.run(0, false);
   }
@@ -910,9 +910,9 @@ class Basic {
       if (!this.inTrap && this.anyTrapOn) {
         const tl = this._checkTraps();
         if (tl) {
-          this.inTrap = true;
+          this.inTrap = true; this._inTrapChain = true;
           try { const tr = await this.run(this.go(tl), true, true); if (tr && (tr.t === 'end' || tr.t === 'system' || tr.t === 'chain')) return tr; if (tr && tr.t === 'goto') { ip = this.go(tr.line); } }
-          finally { this.inTrap = false; }
+          finally { this.inTrap = false; this._inTrapChain = false; }
           continue;
         }
       }
@@ -1058,7 +1058,7 @@ class Basic {
       case 'return': return { t: 'return' };
       case 'run': return { t: 'run' };
       case 'goto': return { t: 'goto', line: st.line };
-      case 'gosub': { const r = await this.run(this.go(st.line), true); return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain' || r.t === 'run') ? r : null; }
+      case 'gosub': { const r = await this.run(this.go(st.line), true, this._inTrapChain); return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain' || r.t === 'run' || r.t === 'goto') ? r : null; }
       case 'chain': {
         const name = String(await this.evl(st.name));
         const keepV = {}; for (const k of this.commonVars) if (k in this.vars) keepV[k] = this.vars[k];   // CHAIN passes ONLY
@@ -1089,8 +1089,8 @@ class Basic {
         if (idx < 1 || idx > st.lines.length) return null;        // out of range → fall through
         const target = st.lines[idx - 1];
         if (!st.gosub) return { t: 'goto', line: target };
-        const r = await this.run(this.go(target), true);          // ON..GOSUB: call, then continue
-        return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain' || r.t === 'run') ? r : null;
+        const r = await this.run(this.go(target), true, this._inTrapChain);  // ON..GOSUB: call, then continue
+        return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain' || r.t === 'run' || r.t === 'goto') ? r : null;
       }
       case 'print': return st.fileno != null ? this.doFilePrint(st) : this.doPrint(st);
       case 'write': return this.doFileWrite(st);          // only reaches here when st.fileno set (else execS handles)

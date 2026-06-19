@@ -21,9 +21,12 @@
     src: url('consola.ttf') format('truetype');
     font-weight: normal;
     font-style: normal;
-    ascent-override: 94%;
+    ascent: normal;
+    descent: normal;
+    size-adjust: 100%;
+    /*ascent-override: 94%;
     descent-override: 47%;
-    size-adjust: 93.5%;
+    size-adjust: 93.5%;*/
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
@@ -32,10 +35,10 @@
 
   #screen {
     font-family: 'Consolas','Menlo','Monaco','DejaVu Sans Mono','Courier New',monospace;
-    font-size: 18px; line-height: 1.15; letter-spacing: 0;
+    font-size: 18px; line-height: 21px; letter-spacing: 0;
     background: transparent; color: #aaa; padding: 8px; margin: 0;
     white-space: pre; display: inline-block; position: relative; z-index: 2;
-    width: 80ch; height: calc(25 * 1.15em); box-sizing: content-box;
+    width: 80ch; height: calc(25 * 21px); box-sizing: content-box;
     flex-shrink: 0;
   }
   #screen span { display: inline; }
@@ -49,10 +52,10 @@
   }
   #gate-pre {
     font-family: 'Consolas','Menlo','Monaco','DejaVu Sans Mono','Courier New',monospace;
-    font-size: 18px; line-height: 1.15; letter-spacing: 0;
+    font-size: 18px; line-height: 21px; letter-spacing: 0;
     background: #000; color: #aaa; padding: 8px; margin: 0;
     white-space: pre; display: inline-block;
-    width: 80ch; height: calc(25 * 1.15em); box-sizing: content-box;
+    width: 80ch; height: calc(25 * 21px); box-sizing: content-box;
     outline: none; overflow: hidden; flex-shrink: 0;
   }
   .gate-sel { background: #aaa; color: #000; }

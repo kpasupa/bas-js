@@ -122,12 +122,14 @@ class Terminal {
     const s = this.screen;
     if (question) { s.put('? '); s.render(); }
     s.setCursorVisible(true);
-    // Flush any pending extended-key scan code and leading control chars that accumulated
-    // during INKEY$ game loops. 2-char '\x00X' strings in _buf have charCodeAt(0)=0 so
-    // they are caught by the same < 32 check and removed whole. Printable chars (≥0x20)
-    // are kept as legitimate type-ahead.
-    this._inkeyPending = null;
-    while (this._buf.length > 0 && this._buf[0].charCodeAt(0) < 32) this._buf.shift();
+    // Bidirectional stage fence: clear buffer and pending scan-code on the way IN
+    // (discards game-loop leftovers before the prompt) and again on the way OUT
+    // (prevents keys typed during INPUT from leaking into game-mode INKEY$ reads).
+    const _flushInput = () => {
+      this._inkeyPending = null;
+      this._buf = this._buf.filter(c => c === _ESC_SENTINEL);
+    };
+    _flushInput();
     let buf = '';
     for (;;) {
       const ch = await this.nextKey();
@@ -138,13 +140,14 @@ class Terminal {
         if (buf.length) { buf = buf.slice(0, -1); s.col -= 1; s.put(' '); s.col -= 1; s.render(); }
         continue;
       }
-      if (ch < ' ') continue; // remaining control chars and '\x00X' 2-char extended keys
+      if (ch < ' ') continue; // control chars and '\x00X' 2-char extended keys
       buf += ch;
       s.put(ch);
       s.render();
     }
     s.newline();
     s.render();
+    _flushInput(); // clear keys pressed during / just after typing
     if (type === 'int') { const v = parseInt(buf, 10); return Number.isNaN(v) ? 0 : v; }
     if (type === 'num') { const v = parseFloat(buf); return Number.isNaN(v) ? 0 : v; }
     return buf;

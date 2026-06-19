@@ -1,4 +1,4 @@
-﻿// Keyboard + input primitives over a Screen: INPUT (line, typed), INPUT$(1) (one key),
+// Keyboard + input primitives over a Screen: INPUT (line, typed), INPUT$(1) (one key),
 // INKEY$ (non-blocking poll). One Terminal owns the keydown listener for a screen.
 
 // Sentinel value injected by abort() — never a real keypress.
@@ -31,8 +31,23 @@ class Terminal {
     this.pasteText(text);
   }
 
+  // Enqueue one logical keypress. Extended keys (2-char, null-prefixed) are split into
+  // two separate _buf entries to match real GW-BASIC keyboard-buffer behaviour: games
+  // read CHR$(0) with a first INKEY$ call, then the scan code with a second call.
+  _enqueue(ch) {
+    if (ch.length === 2 && ch.charCodeAt(0) === 0) {
+      // Deliver null prefix to any waiting INKEY$/INPUT$; scan code always goes to buf.
+      if (this._waiters.length) this._waiters.shift()('\x00');
+      else this._buf.push('\x00');
+      this._buf.push(ch[1]);
+    } else {
+      if (this._waiters.length) this._waiters.shift()(ch);
+      else this._buf.push(ch);
+    }
+  }
+
   _onKey(e) {
-    // Ctrl+C double-tap (≤500 ms apart) → CHR$(3). Single Ctrl+C passes to browser (copy).
+    // Ctrl+C double-tap (≤500 ms apart) → abort. Single Ctrl+C passes to browser (copy).
     if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) {
       const now = Date.now();
       if (now - this._ctrlCTime <= 500) {
@@ -49,10 +64,7 @@ class Terminal {
       e.preventDefault();
       const n = parseInt(fk[1], 10);
       this._trapBuf.push(n);
-      if (n >= 1 && n <= 10) {                              // F1=CHR$(59)..F10=CHR$(68)
-        const ch = '\x00' + String.fromCharCode(58 + n);
-        if (this._waiters.length) this._waiters.shift()(ch); else this._buf.push(ch);
-      }
+      if (n >= 1 && n <= 10) this._enqueue('\x00' + String.fromCharCode(58 + n)); // F1=CHR$(59)..F10=CHR$(68)
       return;
     }
     let ch = null;
@@ -73,8 +85,7 @@ class Terminal {
     else if (e.key === 'Delete')     ch = '\x00S';           // CHR$(0)+CHR$(83)
     if (ch === null) return;
     e.preventDefault();
-    if (this._waiters.length) this._waiters.shift()(ch);
-    else this._buf.push(ch);
+    this._enqueue(ch);
   }
 
   nextKey() {
@@ -103,10 +114,13 @@ class Terminal {
     const s = this.screen;
     if (question) { s.put('? '); s.render(); }
     s.setCursorVisible(true);
-    // Flush leading control chars (incl. \r and \x00-prefixed extended keys) that
-    // accumulated in the buffer during INKEY$ game loops before this INPUT prompt.
-    // Printable chars (≥0x20) are kept as legitimate type-ahead.
-    while (this._buf.length > 0 && this._buf[0].charCodeAt(0) < 32) this._buf.shift();
+    // Flush leading control chars (incl. \r and extended-key pairs) accumulated during
+    // INKEY$ game loops. Printable chars (≥0x20) are kept as legitimate type-ahead.
+    while (this._buf.length > 0 && this._buf[0].charCodeAt(0) < 32) {
+      const f = this._buf.shift();
+      // Extended key null prefix: also drop the scan code that follows
+      if (f.charCodeAt(0) === 0 && this._buf.length > 0) this._buf.shift();
+    }
     let buf = '';
     for (;;) {
       const ch = await this.nextKey();
@@ -117,7 +131,11 @@ class Terminal {
         if (buf.length) { buf = buf.slice(0, -1); s.col -= 1; s.put(' '); s.col -= 1; s.render(); }
         continue;
       }
-      if (ch < ' ') continue;
+      if (ch < ' ') {
+        // Extended key null prefix: skip the scan code sitting next in _buf
+        if (ch.charCodeAt(0) === 0 && this._buf.length > 0) this._buf.shift();
+        continue;
+      }
       buf += ch;
       s.put(ch);
       s.render();

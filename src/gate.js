@@ -18,7 +18,7 @@ const IDB = { PROJECTS: 'projects_v3', RECENT: 'recentBas_v3', AUTORUN: 'autoRun
 
 let projects    = [];   // [{ handle, name, files: {'FILE.BAS': codec|null} }]
 let recentBas   = null; // { folderName, basFile, codec }
-let autoRun     = true; // auto-execute recent BAS on load if permission live
+let autoRun     = false; // auto-execute recent BAS on load if permission live
 let clockSpeed  = 1;    // 0=SLOW 1=NORMAL 2=FAST 3=MAX
 
 // Clock speed presets: label shown in UI + ms delay added to every backward GOTO.
@@ -273,7 +273,7 @@ function draw() {
   const lines = [];
 
   // lines 1-3: header (2 info lines + clock speed control)
-  lines.push(hesc('bas-js 1.3.66'));
+  lines.push(hesc('bas-js 1.3.67'));
   lines.push(hesc('(C) Copyright Krit Pasupa, github.com/kpasupa'));
   lines.push(clockSpeedLine());
   lines.push('');
@@ -381,26 +381,33 @@ async function scanAndSetup(pi) {
 
 // ── grant permission + scan .BAS files ───────────────────────────────────────
 // Called from keydown Enter — requestPermission() as first await keeps gesture alive.
+let _scanning = false;
 async function grantAndScan(pi) {
-  const proj = projects[pi];
-  gateMsg = 'Requesting permission…'; draw();
+  if (_scanning) return false;
+  _scanning = true;
   try {
-    const perm = await proj.handle.requestPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') { gateMsg = 'Permission denied.'; draw(); return false; }
-  } catch(e) { gateMsg = 'Error: ' + e.message; draw(); return false; }
-  gateMsg = 'Scanning…'; draw();
-  try { await scanAndSetup(pi); } catch(e) {
-    if (e instanceof DOMException && e.name === 'NotFoundError') {
-      projects.splice(pi, 1);
-      await idbSetKey(IDB.PROJECTS, projects);
-      rebuildLeftItems();
-      gateMsg = 'Folder not found — removed from list.'; draw();
-    } else {
-      gateMsg = 'Scan error: ' + e.message; draw();
+    const proj = projects[pi];
+    gateMsg = 'Requesting permission…'; draw();
+    try {
+      const perm = await proj.handle.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') { gateMsg = 'Permission denied.'; draw(); return false; }
+    } catch(e) { gateMsg = 'Error: ' + e.message; draw(); return false; }
+    gateMsg = 'Scanning…'; draw();
+    try { await scanAndSetup(pi); } catch(e) {
+      if (e instanceof DOMException && e.name === 'NotFoundError') {
+        projects.splice(pi, 1);
+        await idbSetKey(IDB.PROJECTS, projects);
+        rebuildLeftItems();
+        gateMsg = 'Folder not found — removed from list.'; draw();
+      } else {
+        gateMsg = 'Scan error: ' + e.message; draw();
+      }
+      return false;
     }
-    return false;
+    gateMsg = ''; return true;
+  } finally {
+    _scanning = false;
   }
-  gateMsg = ''; return true;
 }
 
 // ── auto-run recent BAS if folder permission is still live ───────────────────

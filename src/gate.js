@@ -19,14 +19,14 @@ const IDB = { PROJECTS: 'projects_v3', RECENT: 'recentBas_v3', AUTORUN: 'autoRun
 let projects    = [];   // [{ handle, name, files: {'FILE.BAS': codec|null} }]
 let recentBas   = null; // { folderName, basFile, codec }
 let autoRun     = true; // auto-execute recent BAS on load if permission live
-let clockSpeed  = 1;    // 0=SLOW 1=NORM 2=FAST 3=MAX
+let clockSpeed  = 1;    // 0=SLOW 1=NORMAL 2=FAST 3=MAX
 
 // Clock speed presets: label shown in UI + ms delay added to every backward GOTO.
 const CLOCK_SPEEDS = [
-  { label: 'SLOW', ms: 100 },
-  { label: 'NORM', ms: 33  },
-  { label: 'FAST', ms: 8   },
-  { label: 'MAX',  ms: 0   },
+  { label: 'SLOW',   ms: 100 },
+  { label: 'NORMAL', ms: 33  },
+  { label: 'FAST',   ms: 8   },
+  { label: 'MAX',    ms: 0   },
 ];
 
 async function loadData() {
@@ -273,7 +273,7 @@ function draw() {
   const lines = [];
 
   // lines 1-3: header (2 info lines + clock speed control)
-  lines.push(hesc('bas-js 1.3.65'));
+  lines.push(hesc('bas-js 1.3.66'));
   lines.push(hesc('(C) Copyright Krit Pasupa, github.com/kpasupa'));
   lines.push(clockSpeedLine());
   lines.push('');

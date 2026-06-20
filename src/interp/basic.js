@@ -54,9 +54,15 @@ function tokenize(src) {
       if (j < src.length && /[%!#]/.test(src[j])) j++;
       i = j; t.push({ k: 'num', v: parseFloat(n) }); continue;
     }
-    if (idStart(c)) { let j = i, id = ''; while (j < src.length && idChar(src[j])) id += src[j++]; if (j < src.length && '%!#$'.includes(src[j])) id += src[j++]; i = j; t.push({ k: 'id', v: id }); continue; }
-    const two = src.substr(i, 2);
-    if (two === '<=' || two === '>=' || two === '<>') { t.push({ k: 'op', v: two }); i += 2; continue; }
+    if (idStart(c)) { let j = i, id = ''; while (j < src.length && idChar(src[j])) id += src[j++]; if (j < src.length && '%!$'.includes(src[j])) id += src[j++]; else if (j < src.length && src[j] === '#' && (j + 1 >= src.length || !/[0-9]/.test(src[j + 1]))) id += src[j++]; i = j; t.push({ k: 'id', v: id }); continue; }
+    // Two-char relational operators; also handle optional spaces between chars (GW-BASIC detokenised form, e.g. '< >' → '<>')
+    if ('<>='.includes(c)) {
+      let j = i + 1;
+      while (j < src.length && src[j] === ' ') j++;
+      const two = c + (src[j] || '');
+      const norm = {'<>':'<>','<=':'<=','>=':'>=','=>':'>=','=<':'<=','><':'<>'}[two];
+      if (norm) { t.push({ k: 'op', v: norm }); i = j + 1; continue; }
+    }
     if ('=<>+-*/^\\'.includes(c)) { t.push({ k: 'op', v: c }); i++; continue; }
     if (c === '(') { t.push({ k: 'lp' }); i++; continue; }
     if (c === ')') { t.push({ k: 'rp' }); i++; continue; }
@@ -64,6 +70,7 @@ function tokenize(src) {
     if (c === ';') { t.push({ k: 'semi' }); i++; continue; }
     if (c === ':') { t.push({ k: 'colon' }); i++; continue; }
     if (c === '#') { t.push({ k: 'hash' }); i++; continue; }  // file-number marker (e.g. PRINT #1) — needed to tell file I/O from console
+    if (c === '?') { t.push({ k: 'id', v: 'PRINT' }); i++; continue; }  // GW-BASIC ? shorthand for PRINT
     i++; // skip any other unknown char
   }
   return t;
@@ -88,10 +95,14 @@ function parseLine(tokens) {
 
 function parseStatement(c) {
   const tok = c.peek();
+  if (!tok) return { t: 'rem' };
+  // Bare line-number at statement start (GW-BASIC implicit-GOTO after THEN lineno spill).
+  if (tok.k === 'num') { c.next(); return tok.v > 0 ? { t: 'goto', line: tok.v } : { t: 'rem' }; }
   if (tok.k === 'id') {
     const w = tok.v.toUpperCase();
     switch (w) {
       case 'REM': while (!c.eof()) c.next(); return { t: 'rem' };
+      case 'THEN': c.next(); return { t: 'rem' }; // stray THEN at statement start — skip, parseLine re-enters for the following statement
       case 'COMMON': {
         c.next(); const vars = [], arrs = [];
         while (!c.eof() && c.peek().k !== 'colon') {
@@ -111,7 +122,7 @@ function parseStatement(c) {
       case 'RETURN': c.next(); return { t: 'return' };
       case 'GOTO': c.next(); return { t: 'goto', line: c.next().v };
       case 'GOSUB': c.next(); return { t: 'gosub', line: c.next().v };
-      case 'CHAIN': c.next(); return { t: 'chain', name: parseExpr(c) };
+      case 'CHAIN': { c.next(); const _cn = parseExpr(c); while (!c.eof() && c.peek().k === 'comma') { c.next(); if (!c.eof() && c.peek().k !== 'colon' && c.peek().k !== 'comma') parseExpr(c); } return { t: 'chain', name: _cn }; }
       case 'COLOR': c.next(); return { t: 'color', args: parseExprList(c) };
       case 'LOCATE': c.next(); return { t: 'locate', args: parseExprList(c) };
       case 'PRINT': {
@@ -124,7 +135,8 @@ function parseStatement(c) {
         c.next();
         if (c.peek() && c.peek().k === 'hash') {           // INPUT #n, var, var…  (sequential)
           c.next(); const fileno = c.next().v; if (c.peek() && c.peek().k === 'comma') c.next();
-          const vars = [c.next().v]; while (!c.eof() && c.peek().k === 'comma') { c.next(); vars.push(c.next().v); }
+          const _pv = () => { const nm = c.next().v; if (c.peek() && c.peek().k === 'lp') { c.next(); const idx = [parseExpr(c)]; while (c.peek() && c.peek().k === 'comma') { c.next(); idx.push(parseExpr(c)); } c.next(); return { name: nm, idx }; } return nm; };
+          const vars = [_pv()]; while (!c.eof() && c.peek().k === 'comma') { c.next(); vars.push(_pv()); }
           return { t: 'finput', fileno, vars };
         }
         return parseInput(c);
@@ -164,7 +176,7 @@ function parseStatement(c) {
       case 'RESTORE': { c.next(); let line = null; if (!c.eof() && c.peek().k === 'num') line = c.next().v; return { t: 'restore', line }; }
       case 'WRITE': { c.next(); let fileno = null; if (c.peek() && c.peek().k === 'hash') { c.next(); fileno = c.next().v; if (c.peek() && c.peek().k === 'comma') c.next(); } const vals = []; if (!c.eof() && c.peek().k !== 'colon') { vals.push(parseExpr(c)); while (!c.eof() && c.peek().k === 'comma') { c.next(); vals.push(parseExpr(c)); } } return { t: 'write', vals, fileno }; }
       case 'FOR': { c.next(); const v = c.next().v; c.next(); const from = parseExpr(c); /*TO*/ c.next(); const to = parseExpr(c); let step = { t: 'num', v: 1 }; if (kw(c.peek(), 'STEP')) { c.next(); step = parseExpr(c); } return { t: 'for', var: v, from, to, step }; }
-      case 'NEXT': { c.next(); if (!c.eof() && c.peek().k === 'id') c.next(); return { t: 'next' }; }
+      case 'NEXT': { c.next(); let _nc = 0; while (!c.eof() && c.peek().k === 'id') { c.next(); _nc++; if (c.peek() && c.peek().k === 'comma') c.next(); } return { t: 'next', count: Math.max(1, _nc) }; }
       case 'WHILE': { c.next(); return { t: 'while', cond: parseExpr(c) }; }
       case 'WEND': { c.next(); return { t: 'wend' }; }
       case 'DIM': {
@@ -181,9 +193,12 @@ function parseStatement(c) {
       case 'ERASE': { c.next(); const names = [c.next().v]; while (!c.eof() && c.peek().k === 'comma') { c.next(); names.push(c.next().v); } return { t: 'erase', names }; }
       case 'DEF': {
         c.next();
-        if (kw(c.peek(), 'SEG') || kw(c.peek(), 'USR')) { // DEF SEG / DEF USR — no-op
-          c.next(); if (c.peek() && c.peek().k === 'op' && c.peek().v === '=') { c.next(); parseExpr(c); }
-          return { t: 'rem' };
+        if (kw(c.peek(), 'SEG') || kw(c.peek(), 'USR')) {
+          const isUsr = kw(c.peek(), 'USR');
+          c.next(); let val = null;
+          if (c.peek() && c.peek().k === 'op' && c.peek().v === '=') { c.next(); val = parseExpr(c); }
+          if (isUsr) return { t: 'rem' };
+          return { t: 'defseg', val };   // DEF SEG [= expr]
         }
         let fname = c.next().v.toUpperCase();               // FNxxx  (or "FN" then the name, if spaced)
         if (fname === 'FN' && c.peek() && c.peek().k === 'id') fname = 'FN' + c.next().v.toUpperCase();
@@ -209,7 +224,13 @@ function parseStatement(c) {
         }
         return { t: 'deftype', ty, ranges };
       }
-      case 'WIDTH': c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' };
+      case 'WIDTH': {
+        c.next();
+        if (c.peek() && c.peek().k === 'str') { while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' }; } // WIDTH "device",n — ignore
+        const cols = parseExpr(c);
+        while (!c.eof() && c.peek().k !== 'colon') c.next();
+        return { t: 'width', cols };
+      }
       case 'KEY': {
         c.next();
         if (c.peek() && c.peek().k === 'lp') { c.next(); const n = parseExpr(c); if (c.peek() && c.peek().k === 'rp') c.next(); return { t: 'trapstate', ev: 'KEY', n, state: (c.next().v || '').toUpperCase() }; } // KEY(n) ON/OFF/STOP
@@ -226,7 +247,7 @@ function parseStatement(c) {
       case 'PSET': case 'PRESET': { const preset = w === 'PRESET'; c.next(); const p = parseCoord(c); let color = null; if (c.peek() && c.peek().k === 'comma') { c.next(); color = parseExpr(c); } return { t: 'pset', preset, x: p.x, y: p.y, step: p.step, color }; }
       case 'CIRCLE': {
         c.next(); const p = parseCoord(c); if (c.peek() && c.peek().k === 'comma') c.next(); const r = parseExpr(c);
-        const opt = () => { if (c.peek() && c.peek().k === 'comma') { c.next(); return (!c.eof() && c.peek().k !== 'comma' && c.peek().k !== 'colon') ? parseExpr(c) : null; } return null; };
+        const opt = () => { if (c.peek() && c.peek().k === 'comma') { c.next(); const nx = c.peek(); if (!nx || nx.k === 'comma' || nx.k === 'colon' || kw(nx, 'PRINT')) return null; return parseExpr(c); } return null; };
         const color = opt(), start = opt(), end = opt(), aspect = opt();
         return { t: 'circle', x: p.x, y: p.y, r, color, start, end, aspect };
       }
@@ -262,9 +283,40 @@ function parseStatement(c) {
         if (c.peek() && c.peek().k === 'comma') { c.next(); if (c.peek() && c.peek().k === 'id') box = c.next().v.toUpperCase(); }
         return { t: 'gline', x1, y1, step1, x2: p2.x, y2: p2.y, step2: p2.step, color, box };
       }
+      case 'RUN': {
+        c.next();
+        if (!c.eof() && c.peek().k !== 'colon') {
+          const _ra = parseExpr(c);
+          // RUN "file" → chain to another .BAS; RUN lineNum → restart current program
+          if (_ra.t === 'str') return { t: 'chain', name: _ra };
+          return { t: 'run' };
+        }
+        return { t: 'run' };
+      }
+      case 'LOAD': { c.next(); let _lf = null; if (!c.eof() && c.peek().k !== 'colon') _lf = parseExpr(c); while (!c.eof() && c.peek().k !== 'colon') c.next(); return _lf ? { t: 'chain', name: _lf } : { t: 'run' }; } // LOAD "file"[,R] — treat as CHAIN
+      case 'CALL': { c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' }; } // machine-code CALL — no-op
+      case 'BLOAD': case 'BSAVE': { c.next(); while (!c.eof() && c.peek().k !== 'colon') c.next(); return { t: 'rem' }; } // binary file load/save — no-op in browser
+      case 'MID$': {
+        // MID$(var$, pos[, len]) = expr — in-place string replacement (length unchanged)
+        c.next(); // consume MID$
+        if (c.peek() && c.peek().k === 'lp') {
+          c.next(); // (
+          const vname = c.next().v; // variable name
+          if (c.peek() && c.peek().k === 'comma') c.next();
+          const pos = parseExpr(c);
+          let len = null;
+          if (c.peek() && c.peek().k === 'comma') { c.next(); if (c.peek() && c.peek().k !== 'rp') len = parseExpr(c); }
+          if (c.peek() && c.peek().k === 'rp') c.next(); // )
+          if (c.peek() && c.peek().k === 'op' && c.peek().v === '=') c.next(); // =
+          return { t: 'midassign', var: vname, pos, len, expr: parseExpr(c) };
+        }
+        return { t: 'rem' };
+      }
     }
+    return parseAssign(c);  // id not in switch → variable assignment
   }
-  return parseAssign(c);
+  // Non-id, non-num token at statement start (structural leak): skip it.
+  c.next(); return { t: 'rem' };
 }
 
 function parseAssign(c) {
@@ -302,12 +354,21 @@ function parseExprList(c) {
   const args = [];
   if (c.eof() || c.peek().k === 'colon') return args;
   args.push(c.peek().k === 'comma' ? null : parseExpr(c));
-  while (!c.eof() && c.peek().k === 'comma') { c.next(); args.push((c.eof() || c.peek().k === 'colon') ? null : parseExpr(c)); }
+  while (!c.eof() && c.peek().k === 'comma') { c.next(); args.push((c.eof() || c.peek().k === 'colon' || c.peek().k === 'comma') ? null : parseExpr(c)); }
   return args;
 }
 
 function parseOpen(c) {
-  c.next(); const name = parseExpr(c); let fileno = 1, len = 0, mode = 'random';
+  c.next(); let nameExpr = parseExpr(c); let fileno = 1, len = 0, mode = 'random';
+  // Old-style: OPEN "I",#n,"filename" — detect single mode-letter as first arg
+  if (nameExpr.t === 'str' && /^[IiOoRrAaBb]$/.test(nameExpr.v)) {
+    const ml = nameExpr.v.toUpperCase();
+    mode = ml === 'I' ? 'input' : ml === 'O' ? 'output' : ml === 'A' ? 'append' : 'random';
+    if (c.peek() && c.peek().k === 'comma') c.next();
+    skipHash(c); if (!c.eof() && c.peek().k === 'num') fileno = c.next().v;
+    if (c.peek() && c.peek().k === 'comma') c.next();
+    nameExpr = parseExpr(c);
+  }
   while (!c.eof() && c.peek().k !== 'colon') {
     const t = c.next();
     if (t.k === 'hash') { fileno = c.next().v; }                  // AS #n
@@ -315,7 +376,7 @@ function parseOpen(c) {
     else if (t.k === 'id' && t.v.toUpperCase() === 'LEN') { if (c.peek() && c.peek().k === 'op' && c.peek().v === '=') c.next(); len = c.next().v; }
     else if (t.k === 'id' && t.v.toUpperCase() === 'FOR') { const m = c.next().v.toUpperCase(); mode = m === 'INPUT' ? 'input' : m === 'OUTPUT' ? 'output' : m === 'APPEND' ? 'append' : 'random'; }
   }
-  return { t: 'open', name, fileno, len, mode };
+  return { t: 'open', name: nameExpr, fileno, len, mode };
 }
 
 // Graphics coordinate "(x,y)" with optional STEP (relative) prefix.
@@ -345,6 +406,7 @@ function parsePrint(c, lpr) {
       }
       break;
     }
+    if (kw(c.peek(), 'ELSE') || kw(c.peek(), 'THEN')) break; // stop before ELSE/THEN so IF…THEN PRINT…ELSE works
     if (kw(c.peek(), 'TAB') || kw(c.peek(), 'SPC')) { const fn = c.next().v.toUpperCase(); c.next(); const e = parseExpr(c); c.next(); lead.push({ kind: fn === 'TAB' ? 'tab' : 'spc', expr: e }); }
     else lead.push({ kind: 'expr', expr: parseExpr(c) });
     if (!c.eof() && (c.peek().k === 'semi' || c.peek().k === 'comma')) trailing = c.next().k === 'semi' ? ';' : ','; else trailing = null;
@@ -354,9 +416,11 @@ function parsePrint(c, lpr) {
 
 function parseInput(c) {
   let prompt = null, sep = null;
+  if (c.peek() && c.peek().k === 'semi') c.next(); // INPUT ; prefix (suppress newline) — ignored
   if (c.peek() && c.peek().k === 'str') { prompt = c.next().v; if (c.peek() && (c.peek().k === 'semi' || c.peek().k === 'comma')) sep = c.next().k === 'semi' ? ';' : ','; }
-  const vars = [c.next().v];
-  while (!c.eof() && c.peek().k === 'comma') { c.next(); vars.push(c.next().v); }
+  const pv = () => { const nm = c.next().v; if (c.peek() && c.peek().k === 'lp') { c.next(); const idx = [parseExpr(c)]; while (c.peek() && c.peek().k === 'comma') { c.next(); idx.push(parseExpr(c)); } c.next(); return { name: nm, idx }; } return nm; };
+  const vars = [pv()];
+  while (!c.eof() && c.peek().k === 'comma') { c.next(); vars.push(pv()); }
   return { t: 'input', prompt, sep, vars };
 }
 
@@ -370,7 +434,12 @@ function parseIf(c) {
 }
 
 function parseBranch(c, stopAtElse) {
-  if (c.peek() && c.peek().k === 'num') return [{ t: 'goto', line: c.next().v }];
+  if (c.peek() && c.peek().k === 'num') {
+    const r = [{ t: 'goto', line: c.next().v }];
+    // When in THEN context, consume trailing ':' so parseIf can find ELSE directly.
+    if (stopAtElse) while (c.peek() && c.peek().k === 'colon') c.next();
+    return r;
+  }
   const stmts = [];
   while (!c.eof()) {
     if (c.peek().k === 'colon') { c.next(); continue; }
@@ -383,7 +452,10 @@ function parseBranch(c, stopAtElse) {
 }
 
 // expression parser (precedence: OR<AND<NOT<rel<+-<MOD<*/<unary<^<primary)
-function parseExpr(c) { return pOr(c); }
+function parseExpr(c) { return pImp(c); }
+function pImp(c) { let l = pEqv(c); while (kw(c.peek(), 'IMP')) { c.next(); l = { t: 'bin', op: 'IMP', l, r: pEqv(c) }; } return l; }
+function pEqv(c) { let l = pXor(c); while (kw(c.peek(), 'EQV')) { c.next(); l = { t: 'bin', op: 'EQV', l, r: pXor(c) }; } return l; }
+function pXor(c) { let l = pOr(c); while (kw(c.peek(), 'XOR')) { c.next(); l = { t: 'bin', op: 'XOR', l, r: pOr(c) }; } return l; }
 function pOr(c) { let l = pAnd(c); while (kw(c.peek(), 'OR')) { c.next(); l = { t: 'bin', op: 'OR', l, r: pAnd(c) }; } return l; }
 function pAnd(c) { let l = pNot(c); while (kw(c.peek(), 'AND')) { c.next(); l = { t: 'bin', op: 'AND', l, r: pNot(c) }; } return l; }
 function pNot(c) { if (kw(c.peek(), 'NOT')) { c.next(); return { t: 'un', op: 'NOT', e: pNot(c) }; } return pRel(c); }
@@ -463,15 +535,40 @@ const BUILTINS = new Set([
   'STRING$', 'SPACE$', 'ASC', 'INSTR', 'HEX$', 'OCT$',
   'CVI', 'MKI$', 'CVS', 'MKS$', 'CVD', 'MKD$', 'INKEY$', 'FRE', 'POS', 'EOF', 'LOF', 'LOC',
   'POINT', 'PMAP', 'SCREEN',
+  'PEEK', 'INP', 'VARPTR', 'VARPTR$', 'USR',
 ]);
 
 // DEFtype → suffix used by setVar/getVar for default-typed (suffixless) variables.
 const DEF2SUF = { int: '%', str: '$', dbl: '#', sng: '!' };
 
+// Emit a raw GW-BASIC byte string to a screen sink, interpreting control chars
+// (CHR$ 7-13, 28-31) as cursor/screen commands before the display codec runs.
+// Only the printable byte segments go through applyDisplay.
+function putCtrl(sink, raw) {
+  let seg = '';
+  const flush = () => { if (seg) { sink.put(applyDisplay(seg)); seg = ''; } };
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw.charCodeAt(i);
+    switch (c) {
+      case  7: flush(); beep(); break;
+      case  8: case 29: flush(); sink.cursorLeft?.();  break;  // BS / cursor-left
+      case 10: flush(); sink.newline();                break;  // LF
+      case 11: flush(); sink.locate?.(1, 1);           break;  // VT → home
+      case 12: flush(); sink.cls?.();                  break;  // FF → clear screen
+      case 13: flush(); sink.locate?.(null, 1);        break;  // CR
+      case 28: flush(); sink.cursorRight?.();          break;
+      case 30: flush(); sink.cursorUp?.();             break;
+      case 31: flush(); sink.cursorDown?.();           break;
+      default: seg += raw[i];
+    }
+  }
+  flush();
+}
+
 // ── interpreter ───────────────────────────────────────────────────────────────
 class Basic {
-  constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.arrays = {}; this.optionBase = 0; this.defType = {}; this.fns = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.commonArrs = new Set(); this.onPrintReady = null; this.audio = null; this.gfx = null; this.rndState = 0x2545f4914f6cdd1d & 0xffffffff; this.rndLast = 0; this.onErrorLine = 0; this.errCode = 0; this.errLineNo = 0; this.errIp = 0; this.trace = false;
-    this.trapKey = {}; this.trapKeyState = {}; this.timerLine = 0; this.timerSec = 0; this.timerState = 'OFF'; this.timerLast = 0; this.inTrap = false; this.anyTrapOn = false; }
+  constructor(screen, term, loader) { this.s = screen; this.term = term; this.loader = loader; this.vars = {}; this.arrays = {}; this.optionBase = 0; this.defType = {}; this.fns = {}; this.files = {}; this.printer = new ReportPrinter(); this.commonVars = new Set(); this.commonArrs = new Set(); this.onPrintReady = null; this.audio = null; this.gfx = null; this.rndState = 0x2545f4914f6cdd1d & 0xffffffff; this.rndLast = 0; this.onErrorLine = 0; this.errCode = 0; this.errLineNo = 0; this.errIp = 0; this.trace = false; this.defSeg = 0;
+    this.trapKey = {}; this.trapKeyState = {}; this.timerLine = 0; this.timerSec = 0; this.timerState = 'OFF'; this.timerLast = 0; this.inTrap = false; this.anyTrapOn = false; this._inTrapChain = false; }
 
   _now() { return (typeof performance !== 'undefined' ? performance.now() : Date.now()); } // overridable in tests
   _updateTrapFlag() { this.anyTrapOn = this.timerState === 'ON' || Object.keys(this.trapKeyState).some((k) => this.trapKeyState[k] === 'ON'); }
@@ -482,9 +579,15 @@ class Basic {
       const now = this._now();
       if (now - this.timerLast >= this.timerSec * 1000) { this.timerLast = now; return this.timerLine; }
     }
-    if (this.term && this.term.nextTrap) {
-      let k;
-      while ((k = this.term.nextTrap()) !== 0) if (this.trapKeyState[k] === 'ON' && this.trapKey[k]) return this.trapKey[k];
+    if (this.term && this.term._trapBuf) {
+      // Scan trap buffer: consume ON keys (fire), discard OFF keys, leave STOP keys deferred.
+      const buf = this.term._trapBuf;
+      for (let i = 0; i < buf.length; i++) {
+        const k = buf[i];
+        if (this.trapKeyState[k] === 'ON' && this.trapKey[k]) { buf.splice(i, 1); return this.trapKey[k]; }
+        if (this.trapKeyState[k] !== 'STOP') { buf.splice(i, 1); i--; } // OFF or no handler: discard
+        // STOP: leave in buffer, it will fire when KEY(n) ON is next called
+      }
     }
     return 0;
   }
@@ -521,6 +624,7 @@ class Basic {
   // Coerce on store by the variable's type: explicit suffix wins; otherwise the DEFtype default
   // for its first letter (empty unless a DEFINT/DEFSTR/… ran), else single (number stored as-is).
   setVar(name, val) {
+    if (typeof name !== 'string' || name.length === 0) return;
     const last = name[name.length - 1];
     let ty = (last === '%' || last === '$' || last === '#' || last === '!') ? last : DEF2SUF[this.defType[name[0].toUpperCase()]];
     const k = this.varKey(name);
@@ -535,7 +639,7 @@ class Basic {
     const sizes = dims.map((d) => Math.floor(num(d)) - base + 1);
     const strides = new Array(sizes.length); let tot = 1;
     for (let i = sizes.length - 1; i >= 0; i--) { strides[i] = tot; tot *= sizes[i]; }
-    this.arrays[key] = { base, strides, data: new Array(tot).fill(key.endsWith('$') ? '' : 0) };
+    this.arrays[key] = { base, strides, data: new Array(tot).fill((key.endsWith('$') || this.defType[name[0].toUpperCase()] === 'str') ? '' : 0) };
   }
   _arr(name, n) {                                  // fetch, auto-dimensioning to 10 per axis if unseen
     const key = this.varKey(name);
@@ -544,7 +648,7 @@ class Basic {
   }
   _off(arr, idxs) { let o = 0; for (let i = 0; i < idxs.length; i++) o += (Math.floor(num(idxs[i])) - arr.base) * arr.strides[i]; return o; }
   getArr(name, idxs) { const arr = this._arr(name, idxs.length); return arr.data[this._off(arr, idxs)]; }
-  setArr(name, idxs, val) { const arr = this._arr(name, idxs.length); const k = this.varKey(name); arr.data[this._off(arr, idxs)] = k.endsWith('%') ? Math.trunc(num(val)) : (k.endsWith('$') ? String(val) : val); }
+  setArr(name, idxs, val) { const arr = this._arr(name, idxs.length); const k = this.varKey(name); const _ty = k.endsWith('%') ? '%' : k.endsWith('$') ? '$' : DEF2SUF[this.defType[name[0].toUpperCase()]]; arr.data[this._off(arr, idxs)] = _ty === '%' ? Math.trunc(num(val)) : _ty === '$' ? String(val) : val; }
 
   // ── DEF FN user functions ─────────────────────────────────────────────────────
   // Single-line functions. Params shadow same-named globals for the duration of the call, then
@@ -588,6 +692,9 @@ class Basic {
     }
 
     this.go = (ln) => { if (!(ln in this.lineStart)) throw new Error('Undefined line ' + ln); return this.lineStart[ln]; };
+    this.onErrorLine = 0;  // ON ERROR / traps do not carry over across CHAIN (GW-BASIC behaviour)
+    this.trapKey = {}; this.trapKeyState = {}; this.anyTrapOn = false; this.inTrap = false; this._inTrapChain = false;
+    this.timerLine = 0; this.timerSec = 0; this.timerState = 'OFF';
     return this.run(0, false);
   }
 
@@ -611,7 +718,7 @@ class Basic {
         const clk = clockVar(up); if (clk !== undefined) return clk;  // TIMER / DATE$ / TIME$
         return this.getVar(n.name);
       }
-      case 'un': { const e = this.evlS(n.e); if (e === _S) return _S; return n.op === '-' ? -num(e) : (truthy(e) ? 0 : -1); }
+      case 'un': { const e = this.evlS(n.e); if (e === _S) return _S; return n.op === '-' ? -num(e) : ~i16(e); }
       case 'call': {
         if (n.name === 'INPUT$') return _S;                         // blocking key read
         const a = []; for (const x of n.args) { const v = this.evlS(x); if (v === _S) return _S; a.push(v); }
@@ -633,13 +740,14 @@ class Basic {
       case 'end': return { t: 'end' };
       case 'system': return { t: 'system' };
       case 'return': return { t: 'return' };
+      case 'run': return { t: 'run' };
       case 'goto': return { t: 'goto', line: st.line };
-      case 'next': return { t: 'next' };
+      case 'next': return { t: 'next', count: st.count };
       // gosub recurses into a subroutine that may block partway; defer to the async path so a
       // blocking op there can't cause partial re-execution.
       case 'gosub': return _S;
       case 'color': { const a = this.evlS(st.args[0]); if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; if (this.gfx && this.gfx.active()) this.gfx.color(num(a), b != null ? num(b) : null); else this.s.color(num(a), b != null ? num(b) : null); return null; } // graphics: COLOR = background,palette (text stays white)
-      case 'locate': { const a = this.evlS(st.args[0]); if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; this.s.locate(num(a), b != null ? num(b) : null); return null; }
+      case 'locate': { const a = st.args[0] != null ? this.evlS(st.args[0]) : null; if (a === _S) return _S; const b = st.args[1] != null ? this.evlS(st.args[1]) : null; if (b === _S) return _S; this.s.locate(a != null ? num(a) : null, b != null ? num(b) : null); if (st.args[2] != null) { const cv = this.evlS(st.args[2]); if (cv !== _S) this.s.setCursorVisible(num(cv) !== 0); } return null; }
       case 'assign': {
         const v = this.evlS(st.expr); if (v === _S) return _S;
         if (st.index) { const idx = []; for (const e of st.index) { const iv = this.evlS(e); if (iv === _S) return _S; idx.push(iv); } this.setArr(st.name, idx, v); }
@@ -648,6 +756,7 @@ class Basic {
       }
       case 'dim': { for (const d of st.decls) { const dims = []; for (const e of d.dims) { const v = this.evlS(e); if (v === _S) return _S; dims.push(v); } this.allocArray(d.name, dims); } return null; }
       case 'erase': { for (const nm of st.names) delete this.arrays[this.varKey(nm)]; return null; }
+      case 'defseg': { const v = st.val != null ? this.evlS(st.val) : null; if (v === _S) return _S; this.defSeg = v != null ? num(v) : 0; return null; }
       case 'optionbase': this.optionBase = num(st.n); return null;
       case 'deftype': { for (const [lo, hi] of st.ranges) for (let ch = lo.charCodeAt(0); ch <= hi.charCodeAt(0); ch++) this.defType[String.fromCharCode(ch)] = st.ty; return null; }
       case 'tron': this.trace = st.on; return null;
@@ -680,13 +789,24 @@ class Basic {
         const va = gv(st.a, ia), vb = gv(st.b, ib);
         sv2(st.a, ia, vb); sv2(st.b, ib, va); return null;
       }
+      case 'midassign': {
+        const _mp = this.evlS(st.pos); if (_mp === _S) return _S;
+        const _mr = this.evlS(st.expr); if (_mr === _S) return _S;
+        const _ml = st.len != null ? this.evlS(st.len) : null; if (_ml === _S) return _S;
+        const _ms = String(this.getVar(st.var));
+        const _mp0 = Math.max(1, num(_mp)) - 1;
+        const _mrs = String(_mr);
+        const _mn = Math.max(0, Math.min(_ml != null ? num(_ml) : _mrs.length, _mrs.length, _ms.length - _mp0));
+        this.setVar(st.var, _ms.slice(0, _mp0) + _mrs.slice(0, _mn) + _ms.slice(_mp0 + _mn));
+        return null;
+      }
       case 'data': return null;                          // collected at load; no-op at runtime
       case 'read': {
         for (const v of st.vars) {
           if (this.dataPtr >= this.dataPool.length) throw new Error('Out of DATA');
           const raw = this.dataPool[this.dataPtr++];
-          if (typeof v === 'string') { this.setVar(v, v.endsWith('$') ? String(raw) : num(raw)); }
-          else { const idx = []; for (const e of v.idx) { const iv = this.evlS(e); if (iv === _S) return _S; idx.push(num(iv)); } this.setArr(v.nm, idx, v.nm.endsWith('$') ? String(raw) : num(raw)); }
+          if (typeof v === 'string') { const _rs = v.endsWith('$') || this.defType[v[0].toUpperCase()] === 'str'; this.setVar(v, _rs ? String(raw) : num(raw)); }
+          else { const idx = []; for (const e of v.idx) { const iv = this.evlS(e); if (iv === _S) return _S; idx.push(num(iv)); } const _rs = v.nm.endsWith('$') || this.defType[v.nm[0].toUpperCase()] === 'str'; this.setArr(v.nm, idx, _rs ? String(raw) : num(raw)); }
         }
         return null;
       }
@@ -701,7 +821,7 @@ class Basic {
         if (i < 1 || i > st.lines.length) return null;
         return { t: 'goto', line: st.lines[i - 1] };
       }
-      case 'print': return st.fileno != null ? _S : this.doPrintS(st);   // file print → async
+      case 'print': return (st.fileno != null || this._inTrapChain) ? _S : this.doPrintS(st);   // file print or trap-chain → async (trap-chain adds yield for laser animation)
       case 'for': { const f = this.evlS(st.from); if (f === _S) return _S; const t = this.evlS(st.to); if (t === _S) return _S; const sp = this.evlS(st.step); if (sp === _S) return _S; return { t: 'for', var: st.var, from: num(f), to: num(t), step: num(sp) }; }
       case 'while': { const v = this.evlS(st.cond); if (v === _S) return _S; return { t: 'while', truth: truthy(v), node: st }; }
       case 'wend': return { t: 'wend', node: st };
@@ -731,7 +851,7 @@ class Basic {
     for (const it of st.lead) {
       if (it.kind === 'tab') { const v = this.evlS(it.expr); if (v === _S) return _S; sink.tab(num(v)); }
       else if (it.kind === 'spc') { const v = this.evlS(it.expr); if (v === _S) return _S; st.lpr ? sink.spaces(num(v)) : sink.put(' '.repeat(num(v))); }
-      else { const v = this.evlS(it.expr); if (v === _S) return _S; sink.put(typeof v === 'number' ? basicPrintNum(v) : (st.lpr ? v : applyDisplay(v))); }
+      else { const v = this.evlS(it.expr); if (v === _S) return _S; if (typeof v === 'number') sink.put(basicPrintNum(v)); else if (st.lpr) sink.put(v); else putCtrl(sink, v); }
     }
     if (st.using != null) {
       const mask = this.evlS(st.using); if (mask === _S) return _S;
@@ -753,12 +873,19 @@ class Basic {
         const from = this.evlS(st.from); if (from === _S) return _S;
         const to = this.evlS(st.to); if (to === _S) return _S;
         const step = this.evlS(st.step); if (step === _S) return _S;
+        let _sfi = loops.length - 1; while (_sfi >= 0 && loops[_sfi].var !== st.var) _sfi--; if (_sfi >= 0) loops.splice(_sfi);
         this.setVar(st.var, num(from)); loops.push({ var: st.var, to: num(to), step: num(step), body: i + 1 }); i++; continue;
       }
       if (st.t === 'next') {
-        const f = loops[loops.length - 1]; if (!f) { i++; continue; }
-        const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
-        if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) i = f.body; else { loops.pop(); i++; }
+        const _nc = st.count || 1; let _nb = false;
+        for (let _ni = 0; _ni < _nc; _ni++) {
+          const f = loops[loops.length - 1];
+          if (!f) return { t: 'next', count: _nc - _ni, remainder: stmts.slice(i + 1) }; // no local FOR — bubble up; remainder runs if outer loop exhausts
+          const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
+          if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) { i = f.body; _nb = true; break; }
+          loops.pop();
+        }
+        if (!_nb) i++;
         continue;
       }
       const ctl = this.execS(st); if (ctl === _S) return _S; if (ctl) return ctl; i++;
@@ -769,22 +896,23 @@ class Basic {
   // Execute from a flat index. GOSUB recurses (so the rest of an IF…THEN branch resumes
   // after RETURN); a recursive call with stopOnReturn=true returns on RETURN. FOR/NEXT use a
   // loop stack local to each invocation. Returns the terminating signal (end/system/chain).
-  async run(fromIp, stopOnReturn) {
+  async run(fromIp, stopOnReturn, escapeBelow = -1) {
     const loops = []; let ip = fromIp; let lastYield = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
     while (ip < this.flat.length) {
       const cur = this.flat[ip];
-      // Keep the UI responsive on long synchronous scans: yield to the event loop every ~50ms
-      // (only in the outer loop, not inside GOSUB recursions, to avoid extra overhead).
-      if (!stopOnReturn && nowMs() - lastYield > 50) { await new Promise((r) => setTimeout(r)); lastYield = nowMs(); }
+      // Keep the UI responsive on long synchronous scans: yield to the event loop every ~50ms.
+      // Each run() invocation (outer loop or GOSUB) has its own lastYield, so quick subroutines
+      // never trigger an actual await — only a loop that truly runs >50ms in one call will yield.
+      if (nowMs() - lastYield > 50) { await new Promise((r) => setTimeout(r)); lastYield = nowMs(); }
       // Event traps (ON KEY / ON TIMER): between statements, if armed, fire the handler as an
       // implicit GOSUB. Fires inside GOSUBs too (GW-BASIC does); inTrap blocks re-entry.
       if (!this.inTrap && this.anyTrapOn) {
         const tl = this._checkTraps();
         if (tl) {
-          this.inTrap = true;
-          try { const tr = await this.run(this.go(tl), true); if (tr && (tr.t === 'end' || tr.t === 'system' || tr.t === 'chain')) return tr; }
-          finally { this.inTrap = false; }
+          this.inTrap = true; this._inTrapChain = true;
+          try { const tr = await this.run(this.go(tl), true, tl); if (tr && (tr.t === 'end' || tr.t === 'system' || tr.t === 'chain')) return tr; if (tr && tr.t === 'goto') { ip = this.go(tr.line); } }
+          finally { this.inTrap = false; this._inTrapChain = false; }
           continue;
         }
       }
@@ -802,15 +930,20 @@ class Basic {
         const sr = this.execS(cur);
         if (sr !== _S) {
           if (!sr) { ip++; continue; }
-          if (sr.t === 'goto') { ip = this.go(sr.line); continue; }
+          if (sr.t === 'goto') { if (escapeBelow >= 0 && sr.line < escapeBelow) return { t: 'goto', line: sr.line }; const _bms = window._bas_clockMs ?? 33; if (sr.line < this.flatLines[ip] && _bms > 0) { await new Promise((r) => setTimeout(r, _bms)); lastYield = nowMs(); } ip = this.go(sr.line); continue; }
           if (sr.t === 'return') { if (stopOnReturn) return { t: 'return' }; ip++; continue; }
           if (sr.t === 'end' || sr.t === 'system' || sr.t === 'chain') return sr;
-          if (sr.t === 'for') { this.setVar(sr.var, sr.from); loops.push({ var: sr.var, to: sr.to, step: sr.step, body: ip + 1 }); ip++; continue; }
+          if (sr.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; if (this.gfx && this.gfx.active()) { this.gfx.screen(0); this.s.gfx = null; this.s.color(7, 0); this.s.cls(); } ip = 0; continue; }
+          if (sr.t === 'for') { let _sfi = loops.length - 1; while (_sfi >= 0 && loops[_sfi].var !== sr.var) _sfi--; if (_sfi >= 0) loops.splice(_sfi); this.setVar(sr.var, sr.from); loops.push({ var: sr.var, to: sr.to, step: sr.step, body: ip + 1 }); ip++; continue; }
           if (sr.t === 'next') {
-            const f = loops[loops.length - 1];
-            if (!f) { ip++; continue; }
-            const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
-            if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) ip = f.body; else { loops.pop(); ip++; }
+            const _nc = sr.count || 1; let _nb = false;
+            for (let _ni = 0; _ni < _nc; _ni++) {
+              const f = loops[loops.length - 1]; if (!f) break;
+              const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
+              if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) { ip = f.body; _nb = true; break; }
+              loops.pop();
+            }
+            if (!_nb) ip++;
             continue;
           }
           if (sr.t === 'while') { ip = sr.truth ? ip + 1 : (sr.node.wendIp != null ? sr.node.wendIp + 1 : ip + 1); continue; }
@@ -822,22 +955,43 @@ class Basic {
       const ctl = await this.exec(this.flat[ip]);
       if (!ctl) { ip++; continue; }
       switch (ctl.t) {
-        case 'goto': ip = this.go(ctl.line); break;
+        case 'goto': if (escapeBelow >= 0 && ctl.line < escapeBelow) return { t: 'goto', line: ctl.line }; { const _bms = window._bas_clockMs ?? 33; if (ctl.line < this.flatLines[ip] && _bms > 0) { await new Promise((r) => setTimeout(r, _bms)); lastYield = nowMs(); } } ip = this.go(ctl.line); break;
         case 'return': if (stopOnReturn) return { t: 'return' }; ip++; break;
         case 'end': return { t: 'end' };
         case 'system': return { t: 'system' };
         case 'chain': return ctl;
+        case 'run': this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; if (this.gfx && this.gfx.active()) { this.gfx.screen(0); this.s.gfx = null; this.s.color(7, 0); this.s.cls(); } ip = 0; break;
         case 'for':
           // Empty-body delay loop ("FOR x=a TO b : NEXT") — the original's ~1s pause idiom.
           // Run it as a real timed delay so flashed messages are readable.
           if (this.flat[ip + 1] && this.flat[ip + 1].t === 'next') { await sleep(delayMs(ctl.from, ctl.to)); ip += 2; break; }
+          { let _sfi = loops.length - 1; while (_sfi >= 0 && loops[_sfi].var !== ctl.var) _sfi--; if (_sfi >= 0) loops.splice(_sfi); }
           this.setVar(ctl.var, ctl.from); loops.push({ var: ctl.var, to: ctl.to, step: ctl.step, body: ip + 1 }); ip++; break;
         case 'next': {
-          const f = loops[loops.length - 1];
-          if (!f) { ip++; break; }
-          const nv = num(this.getVar(f.var)) + f.step;
-          this.setVar(f.var, nv);
-          if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) ip = f.body; else { loops.pop(); ip++; }
+          const _nc = ctl.count || 1; let _nb = false;
+          for (let _ni = 0; _ni < _nc; _ni++) {
+            const f = loops[loops.length - 1]; if (!f) break;
+            const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
+            if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) { ip = f.body; _nb = true; break; }
+            loops.pop();
+          }
+          if (!_nb) {
+            // When NEXT was inside an IF-THEN branch, the remainder of that branch runs now.
+            // e.g. FOR I=1 TO N:IF C(I)<>0 THEN NEXT:GOSUB win:GOTO top — GOSUB win only fires
+            // after the loop exhausts (all elements non-zero), matching GW-BASIC semantics.
+            if (ctl.remainder?.length) {
+              const _rem = await this.runStatements(ctl.remainder);
+              if (_rem) {
+                if (_rem.t === 'goto') { if (escapeBelow >= 0 && _rem.line < escapeBelow) return { t: 'goto', line: _rem.line }; ip = this.go(_rem.line); break; }
+                if (_rem.t === 'return') { if (stopOnReturn) return { t: 'return' }; ip++; break; }
+                if (_rem.t === 'end') return { t: 'end' };
+                if (_rem.t === 'system') return { t: 'system' };
+                if (_rem.t === 'chain') return _rem;
+                if (_rem.t === 'run') { this.vars = {}; this.arrays = {}; this.dataPtr = 0; this.onErrorLine = 0; loops.length = 0; if (this.gfx && this.gfx.active()) { this.gfx.screen(0); this.s.gfx = null; this.s.color(7, 0); this.s.cls(); } ip = 0; break; }
+              }
+            }
+            ip++;
+          }
           break;
         }
         case 'while': ip = ctl.truth ? ip + 1 : (ctl.node.wendIp != null ? ctl.node.wendIp + 1 : ip + 1); break;
@@ -870,13 +1024,19 @@ class Basic {
       if (st.t === 'for') {
         const from = num(await this.evl(st.from)), to = num(await this.evl(st.to));
         if (stmts[i + 1] && stmts[i + 1].t === 'next') { await sleep(delayMs(from, to)); i += 2; continue; } // empty-body delay loop
+        let _sfi = loops.length - 1; while (_sfi >= 0 && loops[_sfi].var !== st.var) _sfi--; if (_sfi >= 0) loops.splice(_sfi);
         this.setVar(st.var, from); loops.push({ var: st.var, to, step: num(await this.evl(st.step)), body: i + 1 }); i++; continue;
       }
       if (st.t === 'next') {
-        const f = loops[loops.length - 1];
-        if (!f) { i++; continue; }
-        const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
-        if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) i = f.body; else { loops.pop(); i++; }
+        const _nc = st.count || 1; let _nb = false;
+        for (let _ni = 0; _ni < _nc; _ni++) {
+          const f = loops[loops.length - 1];
+          if (!f) return { t: 'next', count: _nc - _ni, remainder: stmts.slice(i + 1) }; // no local FOR — bubble up; remainder runs if outer loop exhausts
+          const nv = num(this.getVar(f.var)) + f.step; this.setVar(f.var, nv);
+          if ((f.step >= 0 && nv <= f.to) || (f.step < 0 && nv >= f.to)) { i = f.body; _nb = true; break; }
+          loops.pop();
+        }
+        if (!_nb) i++;
         continue;
       }
       const sr = this.execS(st);
@@ -896,8 +1056,9 @@ class Basic {
       case 'end': return { t: 'end' };
       case 'system': return { t: 'system' };
       case 'return': return { t: 'return' };
+      case 'run': return { t: 'run' };
       case 'goto': return { t: 'goto', line: st.line };
-      case 'gosub': { const r = await this.run(this.go(st.line), true); return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain') ? r : null; }
+      case 'gosub': { const r = await this.run(this.go(st.line), true, this._inTrapChain ? st.line : -1); return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain' || r.t === 'run' || r.t === 'goto') ? r : null; }
       case 'chain': {
         const name = String(await this.evl(st.name));
         const keepV = {}; for (const k of this.commonVars) if (k in this.vars) keepV[k] = this.vars[k];   // CHAIN passes ONLY
@@ -906,11 +1067,21 @@ class Basic {
         return { t: 'chain', name };
       }
       case 'color': { const fg = num(await this.evl(st.args[0])), bg = st.args[1] != null ? num(await this.evl(st.args[1])) : null; if (this.gfx && this.gfx.active()) this.gfx.color(fg, bg); else this.s.color(fg, bg); return null; }
-      case 'locate': this.s.locate(num(await this.evl(st.args[0])), st.args[1] != null ? num(await this.evl(st.args[1])) : null); return null;
+      case 'locate': { const _lr = st.args[0] != null ? num(await this.evl(st.args[0])) : null; const _lc = st.args[1] != null ? num(await this.evl(st.args[1])) : null; this.s.locate(_lr, _lc); if (st.args[2] != null) this.s.setCursorVisible(num(await this.evl(st.args[2])) !== 0); return null; }
       case 'assign': {
         const v = await this.evl(st.expr);
         if (st.index) { const idx = []; for (const e of st.index) idx.push(await this.evl(e)); this.setArr(st.name, idx, v); }
         else this.setVar(st.name, v);
+        return null;
+      }
+      case 'midassign': {
+        const _mp = num(await this.evl(st.pos));
+        const _mr = String(await this.evl(st.expr));
+        const _ml = st.len != null ? num(await this.evl(st.len)) : null;
+        const _ms = String(this.getVar(st.var));
+        const _mp0 = Math.max(1, _mp) - 1;
+        const _mn = Math.max(0, Math.min(_ml != null ? _ml : _mr.length, _mr.length, _ms.length - _mp0));
+        this.setVar(st.var, _ms.slice(0, _mp0) + _mr.slice(0, _mn) + _ms.slice(_mp0 + _mn));
         return null;
       }
       case 'on': {
@@ -918,8 +1089,8 @@ class Basic {
         if (idx < 1 || idx > st.lines.length) return null;        // out of range → fall through
         const target = st.lines[idx - 1];
         if (!st.gosub) return { t: 'goto', line: target };
-        const r = await this.run(this.go(target), true);          // ON..GOSUB: call, then continue
-        return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain') ? r : null;
+        const r = await this.run(this.go(target), true, this._inTrapChain ? target : -1);  // ON..GOSUB: call, then continue
+        return r && (r.t === 'end' || r.t === 'system' || r.t === 'chain' || r.t === 'run' || r.t === 'goto') ? r : null;
       }
       case 'print': return st.fileno != null ? this.doFilePrint(st) : this.doPrint(st);
       case 'write': return this.doFileWrite(st);          // only reaches here when st.fileno set (else execS handles)
@@ -934,7 +1105,7 @@ class Basic {
         return null;
       }
       case 'for': return { t: 'for', var: st.var, from: num(await this.evl(st.from)), to: num(await this.evl(st.to)), step: num(await this.evl(st.step)) };
-      case 'next': return { t: 'next' };
+      case 'next': return { t: 'next', count: st.count };
       case 'while': return { t: 'while', truth: truthy(await this.evl(st.cond)), node: st };
       case 'wend': return { t: 'wend', node: st };
       case 'open': { const name = fileName(await this.evl(st.name)); await this.openFile(st.fileno, name, st.len, st.mode); return null; }
@@ -955,11 +1126,17 @@ class Basic {
         return null;
       }
       case 'close': return this.closeFile(st.fileno);
-      case 'clear': { this.vars = {}; this.arrays = {}; await this.closeFile(null); return null; } // reset state; size args no-op
+      case 'clear': { this.vars = {}; this.arrays = {}; await this.closeFile(null); this.trapKey = {}; this.trapKeyState = {}; this.anyTrapOn = false; if (this.term && this.term._trapBuf) this.term._trapBuf.length = 0; return null; } // reset state; size args no-op
       case 'sound': { const f = num(await this.evl(st.freq)), d = num(await this.evl(st.dur)); if (this.audio) await this.audio.sound(f, d); return null; }
       case 'play': { const s = String(await this.evl(st.str)); if (this.audio) await this.audio.play(s); return null; }
+      case 'width': { const n = num(await this.evl(st.cols)); this.s.setTextCols(n === 40 ? 40 : 80); return null; }
       case 'gscreen': {
         const m = num(await this.evl(st.mode));
+        // GFX modes with fixed hardware column width: SCREEN 1/7/13 = 40-col, all others 80-col.
+        // SCREEN 0 restores 80 columns — real GW-BASIC resets width when returning to text mode.
+        // setTextCols must run BEFORE gfx.screen() so _fit() sizes the canvas to match.
+        if (m === 1 || m === 7 || m === 13) this.s.setTextCols(40);
+        else this.s.setTextCols(80);
         if (this.gfx) this.gfx.screen(m);
         if (m === 0) { this.s.gfx = null; this.s.color(7, 0); this.s.cls(); }      // back to text: default grey/black
         else { this.s.gfx = this.gfx; this.s.color(m === 2 || m === 11 ? 1 : (m === 1 ? 3 : 15), 0); this.s.clearTransparent(); } // graphics: white text on bg 0, shared palette
@@ -1001,7 +1178,7 @@ class Basic {
       case 'gwindow': { if (this.gfx) { if (st.x1 == null) this.gfx.setWindow(); else this.gfx.setWindow(num(await this.evl(st.x1)), num(await this.evl(st.y1)), num(await this.evl(st.x2)), num(await this.evl(st.y2))); } return null; }
       case 'gview': { if (this.gfx) { if (st.x1 == null) this.gfx.setView(); else this.gfx.setView(num(await this.evl(st.x1)), num(await this.evl(st.y1)), num(await this.evl(st.x2)), num(await this.evl(st.y2))); } return null; }
       case 'gget': { if (this.gfx) { const img = this.gfx.getImage(num(await this.evl(st.x1)), num(await this.evl(st.y1)), num(await this.evl(st.x2)), num(await this.evl(st.y2))); (this.gfxStore || (this.gfxStore = {}))[this.varKey(st.arr)] = img; } return null; }
-      case 'gput': { if (this.gfx) this.gfx.putImage(num(await this.evl(st.x)), num(await this.evl(st.y)), (this.gfxStore || {})[this.varKey(st.arr)]); return null; }
+      case 'gput': { if (this.gfx) this.gfx.putImage(num(await this.evl(st.x)), num(await this.evl(st.y)), (this.gfxStore || {})[this.varKey(st.arr)], st.pmode); return null; }
       case 'draw': { if (this.gfx) this.gfx.draw(String(await this.evl(st.str))); return null; }
       case 'viewprint': return null;   // text scroll window — accepted, no-op on a fixed full screen
       case 'files': {
@@ -1044,6 +1221,7 @@ class Basic {
     } else if (mode === 'output') {                           // sequential write (truncate)
       await openOrCreate(name);
       this.files[fileno] = { name, mode, out: '', dirty: true };
+
     } else if (mode === 'append') {                           // sequential write (append)
       let data; try { data = await readFile(name); } catch { data = new Uint8Array(0); await openOrCreate(name); }
       this.files[fileno] = { name, mode, out: strOf(data), dirty: true };
@@ -1079,7 +1257,16 @@ class Basic {
     if (f.pos < d.length && d[f.pos] === 0x0a) f.pos++;
     return s;
   }
-  async doFinput(st) { const f = this.files[st.fileno]; for (const vn of st.vars) this.setVar(vn, this.readDatum(f, vn.endsWith('$'))); return null; }
+  async doFinput(st) {
+    const f = this.files[st.fileno];
+    for (const vn of st.vars) {
+      const name = typeof vn === 'string' ? vn : vn.name;
+      const val = this.readDatum(f, name.endsWith('$'));
+      if (typeof vn === 'string') this.setVar(vn, val);
+      else { const idx = []; for (const e of vn.idx) idx.push(num(await this.evl(e))); this.setArr(name, idx, val); }
+    }
+    return null;
+  }
   async doFilePrint(st) {
     let buf = '', col = 1; const put = (s) => { buf += s; col += s.length; };
     for (const it of st.lead) {
@@ -1103,7 +1290,7 @@ class Basic {
     for (const it of st.lead) {
       if (it.kind === 'tab') s.tab(num(await this.evl(it.expr)));
       else if (it.kind === 'spc') s.put(' '.repeat(num(await this.evl(it.expr))));
-      else { const v = await this.evl(it.expr); s.put(typeof v === 'number' ? basicPrintNum(v) : applyDisplay(v)); }
+      else { const v = await this.evl(it.expr); if (typeof v === 'number') s.put(basicPrintNum(v)); else putCtrl(s, v); }
     }
     if (st.using != null) {
       const mask = String(await this.evl(st.using));
@@ -1113,6 +1300,7 @@ class Basic {
     }
     if (st.trailing !== ';') s.newline();
     s.render();
+    if (this._inTrapChain) await new Promise((r) => setTimeout(r, 5));
   }
 
   // LPRINT → the virtual printer. Raw values are passed through (the printer strips ESC/P,
@@ -1140,10 +1328,14 @@ class Basic {
     // screens (e.g. CHQ07B 1000→GOTO 140) — universal, no per-program special-casing.
     if (this.onPrintReady && !this.printer.isEmpty()) { this.onPrintReady(this.printer.lines); this.printer.reset(); }
     if (st.prompt != null) { this.s.put(applyDisplay(st.prompt)); this.s.render(); }
-    const v = st.vars[0];
-    const type = v.endsWith('$') ? 'str' : v.endsWith('%') ? 'int' : 'num';
-    const raw = await this.term.inputLine({ type: type === 'int' ? 'int' : type === 'num' ? 'num' : 'str', question: st.sep === ';' || st.prompt == null });
-    this.setVar(v, type === 'str' ? applyEncode(raw) : raw);
+    for (const v of st.vars) {
+      const name = typeof v === 'string' ? v : v.name;
+      const type = name.endsWith('$') ? 'str' : name.endsWith('%') ? 'int' : 'num';
+      const raw = await this.term.inputLine({ type: type === 'int' ? 'int' : type === 'num' ? 'num' : 'str', question: st.sep === ';' || st.prompt == null });
+      const val = type === 'str' ? applyEncode(raw) : raw;
+      if (typeof v === 'string') this.setVar(v, val);
+      else { const idx = []; for (const e of v.idx) idx.push(num(await this.evl(e))); this.setArr(name, idx, val); }
+    }
     return null;
   }
 
@@ -1156,7 +1348,7 @@ class Basic {
         // INKEY$ polls; yield to the event loop so keydown can fire (the GW-BASIC
         // "T$=INKEY$:IF T$=\"\" THEN <loop>" wait-for-key idiom would otherwise hang).
         const up = n.name.toUpperCase();
-        if (up === 'INKEY$') { await new Promise((r) => setTimeout(r)); return this.term.inkey(); }
+        if (up === 'INKEY$') { await new Promise((r) => setTimeout(r, 4)); return this.term.inkey(); }
         if (up === 'RND') return this.rnd();                       // bare RND (no parens)
         if (up === 'ERR') return this.errCode;
         if (up === 'ERL') return this.errLineNo;
@@ -1164,7 +1356,7 @@ class Basic {
         const clk = clockVar(up); if (clk !== undefined) return clk;  // TIMER / DATE$ / TIME$
         return this.getVar(n.name);
       }
-      case 'un': return n.op === '-' ? -num(await this.evl(n.e)) : (truthy(await this.evl(n.e)) ? 0 : -1);
+      case 'un': { const _ue = await this.evl(n.e); return n.op === '-' ? -num(_ue) : ~i16(_ue); }
       case 'call': {
         const a = []; for (const x of n.args) a.push(await this.evl(x));
         // INPUT$(n): read exactly n keys (blocking) — used for single-key confirms (CHQ02 890).
@@ -1187,7 +1379,11 @@ class Basic {
       case '=': return l === r ? -1 : 0; case '<>': return l !== r ? -1 : 0;
       case '<': return l < r ? -1 : 0; case '>': return l > r ? -1 : 0;
       case '<=': return l <= r ? -1 : 0; case '>=': return l >= r ? -1 : 0;
-      case 'AND': return (truthy(l) && truthy(r)) ? -1 : 0; case 'OR': return (truthy(l) || truthy(r)) ? -1 : 0;
+      // GW-BASIC bitwise ops: truncate to 16-bit signed integer first
+      case 'AND': return i16(l) & i16(r); case 'OR': return i16(l) | i16(r);
+      case 'XOR': return i16(l) ^ i16(r);
+      case 'EQV': return ~(i16(l) ^ i16(r));
+      case 'IMP': return (~i16(l)) | i16(r);
     }
     return 0;
   }
@@ -1209,12 +1405,12 @@ class Basic {
       case 'CHR$': return String.fromCharCode(num(a[0]) & 0xff);
       case 'STR$': return num(a[0]) >= 0 ? ' ' + fmtNum(num(a[0])) : fmtNum(num(a[0]));
       case 'RIGHT$': return String(a[0]).slice(-num(a[1])); case 'LEFT$': return String(a[0]).slice(0, num(a[1]));
-      case 'MID$': return String(a[0]).substr(num(a[1]) - 1, a[2] != null ? num(a[2]) : undefined);
+      case 'MID$': { const _s = String(a[0]), _p = num(a[1]) - 1; if (_p < 0) return ''; return _s.substr(_p, a[2] != null ? num(a[2]) : undefined); }
       case 'STRING$': return (typeof a[1] === 'number' ? String.fromCharCode(a[1]) : String(a[1])[0]).repeat(num(a[0]));
       case 'SPACE$': return ' '.repeat(num(a[0]));
       case 'ASC': return String(a[0]).length ? String(a[0]).charCodeAt(0) : 0;
       // INSTR([start,] str, sub) — 1-based position of sub in str (0 if absent).
-      case 'INSTR': { const off = a.length >= 3 ? num(a[0]) : 1; const s = String(a.length >= 3 ? a[1] : a[0]); const sub = String(a.length >= 3 ? a[2] : a[1]); return s.indexOf(sub, Math.max(0, off - 1)) + 1; }
+      case 'INSTR': { const off = a.length >= 3 ? num(a[0]) : 1; const s = String(a.length >= 3 ? a[1] : a[0]); const sub = String(a.length >= 3 ? a[2] : a[1]); if (sub === '') return 0; return s.indexOf(sub, Math.max(0, off - 1)) + 1; }
       case 'HEX$': { let n = Math.round(num(a[0])); if (n < 0) n &= 0xffff; return n.toString(16).toUpperCase(); }
       case 'OCT$': { let n = Math.round(num(a[0])); if (n < 0) n &= 0xffff; return n.toString(8); }
       case 'CVI': { const b = bytesOf(String(a[0])); const v = (b[0] || 0) | ((b[1] || 0) << 8); return v & 0x8000 ? v - 0x10000 : v; }
@@ -1229,9 +1425,27 @@ class Basic {
       case 'EOF': { const f = this.files[num(a[0])]; return f && f.data ? (f.pos >= f.data.length ? -1 : 0) : -1; }
       case 'LOF': { const f = this.files[num(a[0])]; return f ? (f.data ? f.data.length : (f.out ? f.out.length : 0)) : 0; }
       case 'LOC': { const f = this.files[num(a[0])]; if (!f) return 0; return Math.floor((f.data ? f.pos : (f.out ? f.out.length : 0)) / 128); }
+      case 'PEEK': { const off = num(a[0]); return (this.defSeg === 0x40 && off === 0x4A) ? this.s.cols : 0; } // BIOS 0040:004A = screen columns
+      case 'INP': return 0;         // hardware port read — inert
+      case 'VARPTR': return 0;      // variable pointer — dummy
+      case 'VARPTR$': return a.length ? String(a[0]) : '';  // used by DRAW X sub-string — return content
+      case 'USR': return a.length ? num(a[0]) : 0;  // machine-code call — pass-through stub
       case 'POINT': return this.gfx ? this.gfx.point(num(a[0]), num(a[1])) : -1;     // pixel colour at (x,y)
       case 'PMAP': return this.gfx ? this.gfx.pmap(num(a[0]), num(a[1])) : num(a[0]);  // logical↔physical map
-      case 'SCREEN': return this.gfx && this.gfx.scrn ? this.gfx.scrn(num(a[0]), num(a[1])) : 32; // read char/attr (text)
+      case 'SCREEN': {
+        if (this.gfx && this.gfx.active() && this.gfx.scrn) return this.gfx.scrn(num(a[0]), num(a[1]));
+        const sr = Math.max(1, Math.min(this.s.rows, Math.round(num(a[0])))), sc = Math.max(1, Math.min(this.s.cols, Math.round(num(a[1]))));
+        const cell = this.s.cells[sr - 1] && this.s.cells[sr - 1][sc - 1];
+        if (!cell) return 32;
+        const _sch = cell.ch; const _scp = _sch.charCodeAt(0);
+        if (_scp < 0x80) return _scp;
+        // Use codec reverse (unicode display char → original GW-BASIC byte).
+        const _codec = window._bas_codec;
+        if (_codec && _codec.reverse) { const _b = _codec.reverse(_sch); if (_b != null) return _b; }
+        // KU42 default reverse lookup.
+        const _ku42b = UTF8_TO_KU42[_sch];
+        return _ku42b != null ? _ku42b : (_scp & 0xFF);
+      } // read char/attr (text)
     }
     console.warn(`[bas] unsupported function ${name}() — returning 0`);
     return 0;
@@ -1243,10 +1457,24 @@ class Basic {
 // nested IF whose branches aren't pure. (INKEY$/INPUT$ inside an expression still surface as _S
 // at eval time, so this only needs to catch statement-level blockers.)
 function branchIsPure(stmts) {
+  // Allow-list: only statement types that execS handles synchronously without side effects
+  // that would need rolling back. Anything unlisted (graphics, sound, async I/O, unknown)
+  // is considered impure — the IF falls back to the async exec path which runs it once, correctly.
   for (const st of stmts || []) {
-    if (st.t === 'input' || st.t === 'lineinput' || st.t === 'finput' || st.t === 'flineinput' || st.t === 'open' || st.t === 'put' || st.t === 'chain' || st.t === 'gosub') return false;
-    if (st.t === 'on' && st.gosub) return false;
-    if (st.t === 'if' && (!branchIsPure(st.then) || !branchIsPure(st.else))) return false;
+    switch (st.t) {
+      case 'rem': case 'common': case 'end': case 'system': case 'return': case 'run':
+      case 'goto': case 'next': case 'for': case 'while': case 'wend':
+      case 'color': case 'locate': case 'assign': case 'dim': case 'erase':
+      case 'defseg': case 'optionbase': case 'deftype': case 'deffn': case 'tron':
+      case 'ontrap': case 'trapstate': case 'onerror': case 'raiseerror': case 'resume':
+      case 'randomize': case 'data': case 'read': case 'restore':
+      case 'swap': case 'midassign': case 'lset': case 'field': case 'get':
+        break;
+      case 'print': case 'write': if (st.fileno != null) return false; break;
+      case 'on': if (st.gosub) return false; break;
+      case 'if': if (!branchIsPure(st.then) || !branchIsPure(st.else)) return false; break;
+      default: return false;
+    }
   }
   return true;
 }
@@ -1262,6 +1490,8 @@ function matchPattern(name, pat) {
 }
 
 const num = (v) => (typeof v === 'number' ? v : parseFloat(v) || 0);
+// GW-BASIC integer narrowing: round to nearest and sign-extend to 16-bit signed range.
+const i16 = (v) => { const n = Math.round(num(v)) & 0xFFFF; return n >= 0x8000 ? n - 0x10000 : n; };
 // GW-BASIC CINT rounds to the nearest integer, ties to even (banker's rounding): 2.5→2, 3.5→4.
 const cint = (x) => { const f = Math.floor(x), d = x - f; if (d < 0.5) return f; if (d > 0.5) return f + 1; return f % 2 === 0 ? f : f + 1; };
 // Bare system-clock built-ins (no parens): TIMER (secs since midnight), DATE$ ("MM-DD-YYYY"),

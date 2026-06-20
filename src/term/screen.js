@@ -16,7 +16,7 @@ class Screen {
     this.bg = 0;
     this.row = 1;
     this.col = 1;
-    this.cursorOn = false;
+    this.cursorOn = true;
     this.gfx = null;          // when set + active, text colours map through the canvas palette
     this.cells = [];
     this.cls();
@@ -61,6 +61,11 @@ class Screen {
     if (col != null) this.col = Math.max(1, Math.min(this.cols, col));
   }
 
+  cursorLeft()  { if (this.col > 1) this.col--; }
+  cursorRight() { if (this.col < this.cols) this.col++; else this.newline(); }
+  cursorUp()    { if (this.row > 1) this.row--; }
+  cursorDown()  { if (this.row < this.rows) this.row++; else this.scroll(); }
+
   // TAB(n): move the print column to n (1-based). If already past n, wrap to next line.
   tab(n) {
     if (this.col > n) this.newline();
@@ -98,6 +103,9 @@ class Screen {
   }
 
   setCursorVisible(on) { this.cursorOn = on; this.render(); }
+  // Switch text column count for SCREEN 1 (40-col) vs SCREEN 0/2+ (80-col).
+  // Called before gfx._fit() so the canvas sizes to match the new text width.
+  setTextCols(n) { if (this.cols === n) return; this.cols = n; if (this.el) { this.el.style.width = n + 'ch'; this.el.style.transform = n === 40 ? 'scale(2, 1)' : ''; } }
 
   render() {
     const out = [];

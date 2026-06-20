@@ -2,6 +2,9 @@
 REM ── bas-js launcher (Windows) ────────────────────────────────────────────────
 REM Opens index.html in a dedicated Chrome/Edge app window. The separate
 REM --user-data-dir keeps the saved folder permission isolated from regular Chrome.
+REM
+REM To use your default Chrome profile instead (so AutoRun and project list are
+REM shared with the browser), comment out or clear the PROFILE line below:
 
 setlocal
 set "HTML=%~dp0index.html"
@@ -25,6 +28,10 @@ if not defined BROWSER (
 )
 
 echo Launching: "%BROWSER%"
-start "" "%BROWSER%" --app="%HTML%" --user-data-dir="%PROFILE%"
+if defined PROFILE (
+  start "" "%BROWSER%" --app="%HTML%" --user-data-dir="%PROFILE%"
+) else (
+  start "" "%BROWSER%" --app="%HTML%"
+)
 
 endlocal

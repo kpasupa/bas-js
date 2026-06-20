@@ -54,7 +54,8 @@ class Graphics {
     this.canvas.width = this.W; this.canvas.height = this.H;
     this.canvas.style.display = 'block'; this.ctx.imageSmoothingEnabled = false;
     this._fit();                                          // pin to the text screen's content area
-    this.buf = new Uint8Array(this.W * this.H);          // palette index per pixel
+    this.buf = new Uint8Array(this.W * this.H);           // palette index per pixel
+    this.fence = new Uint8Array(this.W * this.H);        // LINE fence: permanent PAINT boundary
     this.img = this.ctx.createImageData(this.W, this.H); // RGBA mirror, blitted to the canvas
     if (p.mono) { this.colors = [[0, 0, 0], [255, 255, 255]]; this.ncol = 2; this.fg = 1; }
     else if (mode === 1) { this.colors = SCR1_PAL[1].slice(); this.ncol = 4; this.fg = 3; }
@@ -72,13 +73,18 @@ class Graphics {
     const r = s.getBoundingClientRect(), cs = getComputedStyle(s);
     const pl = parseFloat(cs.paddingLeft) || 0, pt = parseFloat(cs.paddingTop) || 0;
     const pr = parseFloat(cs.paddingRight) || 0, pb = parseFloat(cs.paddingBottom) || 0;
-    const boxW = r.width - pl - pr, boxH = r.height - pt - pb;
-    this.canvas.style.left = (r.left + pl) + 'px';
+    // Use natural (pre-transform) dimensions so the canvas mirrors #screen's scaling approach.
+    // When #screen has scale(2,1), r.width ≈ 2×offsetWidth; detect and replicate the transform.
+    const scaleX = r.width > s.offsetWidth * 1.5 ? 2 : 1;
+    const boxW = s.offsetWidth - pl - pr, boxH = s.offsetHeight - pt - pb;
+    this.canvas.style.left = (r.left + pl * scaleX) + 'px';
     this.canvas.style.top  = (r.top  + pt) + 'px';
     this.canvas.style.width  = boxW + 'px';
     this.canvas.style.height = boxH + 'px';
-    // pixel aspect ratio for the actual display: (css_px_per_gfx_col) / (css_px_per_gfx_row)
-    this._circleAspect = (boxW * this.H) / (boxH * this.W);
+    this.canvas.style.transformOrigin = '0 0';
+    this.canvas.style.transform = scaleX === 2 ? 'scale(2, 1)' : '';
+    // pixel aspect ratio for the actual display; scaleX accounts for scale(2,1) in 40-col mode
+    this._circleAspect = (boxW * scaleX * this.H) / (boxH * this.W);
   }
   _ci(c) { c = c == null ? this.fg : c | 0; return ((c % this.ncol) + this.ncol) % this.ncol; } // wrap to mode's colour count
 
@@ -92,7 +98,7 @@ class Graphics {
   blit() { this.ctx.putImageData(this.img, 0, 0); }
   _repaintAll() { for (let i = 0; i < this.buf.length; i++) { const rgb = this.colors[this.buf[i]] || CGA16[0], o = i * 4; this.img.data[o] = rgb[0]; this.img.data[o + 1] = rgb[1]; this.img.data[o + 2] = rgb[2]; this.img.data[o + 3] = 255; } this.blit(); }
 
-  cls() { this.buf.fill(this._ci(this.bg)); this._repaintAll(); }
+  cls() { this.buf.fill(this._ci(this.bg)); if (this.fence) this.fence.fill(0); this._repaintAll(); }
   // SCREEN 1: COLOR background[,palette]. SCREEN 2: COLOR foreground. PALETTE overrides one entry.
   color(a, b) {
     if (this.mode === 2) { if (a != null) this.fg = a ? 1 : 1; return; }
@@ -116,40 +122,48 @@ class Graphics {
   pset(x, y, c) { const [px, py] = this._map(x, y); this._put(px, py, c); this.blit(); this.lastX = x; this.lastY = y; }
   preset(x, y, c) { this.pset(x, y, c == null ? this.bg : c); }
 
-  _linePx(ax, ay, bx, by, c) {           // integer Bresenham, exact pixels (no AA)
+  _linePx(ax, ay, bx, by, c, fenceIt) {  // integer Bresenham, exact pixels (no AA)
     ax = Math.round(ax); ay = Math.round(ay); bx = Math.round(bx); by = Math.round(by);
     const dx = Math.abs(bx - ax), dy = -Math.abs(by - ay), sx = ax < bx ? 1 : -1, sy = ay < by ? 1 : -1;
     let err = dx + dy, x = ax, y = ay;
-    for (; ;) { this._put(x, y, c); if (x === bx && y === by) break; const e2 = 2 * err; if (e2 >= dy) { err += dy; x += sx; } if (e2 <= dx) { err += dx; y += sy; } }
+    for (; ;) { this._put(x, y, c); if (fenceIt && this.fence) this.fence[y * this.W + x] = 1; if (x === bx && y === by) break; const e2 = 2 * err; if (e2 >= dy) { err += dy; x += sx; } if (e2 <= dx) { err += dx; y += sy; } }
   }
   // LINE (x1,y1)-(x2,y2),color[,B|BF].
   line(x1, y1, x2, y2, c, box) {
     const [ax, ay] = this._map(x1, y1), [bx, by] = this._map(x2, y2);
-    if (box === 'BF') { const lo = Math.round(Math.min(ay, by)), hi = Math.round(Math.max(ay, by)); for (let yy = lo; yy <= hi; yy++) this._linePx(Math.min(ax, bx), yy, Math.max(ax, bx), yy, c); }
-    else if (box === 'B') { this._linePx(ax, ay, bx, ay, c); this._linePx(bx, ay, bx, by, c); this._linePx(bx, by, ax, by, c); this._linePx(ax, by, ax, ay, c); }
-    else this._linePx(ax, ay, bx, by, c);
+    if (box === 'BF') { const lo = Math.round(Math.min(ay, by)), hi = Math.round(Math.max(ay, by)); for (let yy = lo; yy <= hi; yy++) this._linePx(Math.min(ax, bx), yy, Math.max(ax, bx), yy, c, true); }
+    else if (box === 'B') { this._linePx(ax, ay, bx, ay, c, true); this._linePx(bx, ay, bx, by, c, true); this._linePx(bx, by, ax, by, c, true); this._linePx(ax, by, ax, ay, c, true); }
+    else this._linePx(ax, ay, bx, by, c, true);
     this.blit(); this.lastX = x2; this.lastY = y2;
   }
 
   // CIRCLE (x,y),r,color,start,end,aspect — parametric plot; arcs via start/end, ellipse via aspect.
+  // GW-BASIC convention: negative start or end angle means draw a radial line from the center to
+  // that endpoint (pie-slice mode). The arc itself always uses |angle|.
   circle(x, y, r, c, start, end, aspect) {
-    const [cx, cy] = this._map(x, y), rx = Math.abs(r), ry = Math.abs(r * (aspect != null ? aspect : (this._circleAspect ?? this.profile?.circleAspect ?? 1)));
-    const a0 = start != null ? start : 0, a1 = end != null ? end : Math.PI * 2;
+    const [cx, cy] = this._map(x, y), rx = Math.abs(r);
+    const _hwAsp = this.profile?.circleAspect ?? 1;
+    const ry = Math.abs(r * (aspect != null ? aspect : Math.min(this._circleAspect ?? _hwAsp, _hwAsp)));
     const full = start == null && end == null;
     if (full) {
       this._ellipsePx(Math.round(cx), Math.round(cy), Math.round(rx), Math.max(1, Math.round(ry)), c);
       this.blit(); this.lastX = x; this.lastY = y; return;
     }
+    // Negative angles = pie-slice mode: use |angle| for arc, draw radial spoke from center to each endpoint.
+    // GW-BASIC rule: if EITHER angle is negative, draw spokes for BOTH (both edges close the slice).
+    const a0 = Math.abs(start != null ? start : 0), a1 = Math.abs(end != null ? end : Math.PI * 2);
+    const arcPt = (a) => [cx + rx * Math.cos(a), cy - ry * Math.sin(a)]; // GW-BASIC: y-up → screen y-down
+    const isPie = (start != null && start < 0) || (end != null && end < 0);
+    if (isPie && start != null) { const [ex, ey] = arcPt(a0); this._linePx(Math.round(cx), Math.round(cy), Math.round(ex), Math.round(ey), c, true); }
+    if (isPie && end   != null) { const [ex, ey] = arcPt(a1); this._linePx(Math.round(cx), Math.round(cy), Math.round(ex), Math.round(ey), c, true); }
     const steps = Math.max(16, Math.ceil(Math.abs(a1 - a0) * Math.max(rx, ry) * 1.5));
-    let px = null, py = null, firstX = null, firstY = null;
+    let px = null, py = null;
     for (let k = 0; k <= steps; k++) {
-      const a = a0 + (a1 - a0) * k / steps;
-      const nx = cx + rx * Math.cos(a), ny = cy + ry * Math.sin(a); // +sin: 0..π on the bottom (GW-BASIC)
-      if (px == null) { firstX = nx; firstY = ny; this._put(nx, ny, c); }
-      else this._linePx(px, py, nx, ny, c);
+      const [nx, ny] = arcPt(a0 + (a1 - a0) * k / steps);
+      if (px != null) this._linePx(px, py, nx, ny, c);
+      else this._put(Math.round(nx), Math.round(ny), c);  // first point
       px = nx; py = ny;
     }
-    if (full && px != null) this._linePx(px, py, firstX, firstY, c);
     this.blit(); this.lastX = x; this.lastY = y;
   }
 
@@ -181,8 +195,8 @@ class Graphics {
   paint(x, y, c, border) {
     const [sx, sy] = this._map(x, y), X = Math.round(sx), Y = Math.round(sy);
     if (X < 0 || Y < 0 || X >= this.W || Y >= this.H) return;
-    const fill = this._ci(c), bord = border == null ? fill : this._ci(border), W = this.W, b = this.buf;
-    const open = (px, py) => b[py * W + px] !== bord && b[py * W + px] !== fill;
+    const fill = this._ci(c), bord = border == null ? fill : this._ci(border), W = this.W, b = this.buf, f = this.fence;
+    const open = (px, py) => !(f && f[py * W + px]) && b[py * W + px] !== bord && b[py * W + px] !== fill;
     if (b[Y * W + X] === bord) return;
     const st = [[X, Y]];
     while (st.length) {
@@ -206,10 +220,30 @@ class Graphics {
     for (let r = 0; r < h; r++) for (let cc = 0; cc < w; cc++) { const px = X + cc, py = Y + r; data[r * w + cc] = (px >= 0 && py >= 0 && px < this.W && py < this.H) ? this.buf[py * this.W + px] : 0; }
     return { w, h, data };
   }
-  putImage(x, y, img) {
+  putImage(x, y, img, mode) {
     if (!img || !img.data) return;
     const [px, py] = this._map(x, y), X = Math.round(px), Y = Math.round(py);
-    for (let r = 0; r < img.h; r++) for (let cc = 0; cc < img.w; cc++) this._put(X + cc, Y + r, img.data[r * img.w + cc]);
+    const md = mode ? String(mode).toUpperCase() : 'XOR'; // GW-BASIC default PUT action is XOR (self-inverse: PUT draws, PUT again erases)
+    if (md === 'PSET') {
+      for (let r = 0; r < img.h; r++) for (let cc = 0; cc < img.w; cc++) this._put(X + cc, Y + r, img.data[r * img.w + cc]);
+    } else {
+      const mask = this.ncol - 1;
+      for (let r = 0; r < img.h; r++) for (let cc = 0; cc < img.w; cc++) {
+        const px2 = X + cc, py2 = Y + r;
+        if (px2 < 0 || py2 < 0 || px2 >= this.W || py2 >= this.H) continue;
+        const src = this._ci(img.data[r * img.w + cc]);
+        const idx = py2 * this.W + px2;
+        let ci;
+        if (md === 'XOR')    ci = (this.buf[idx] ^ src) & mask;
+        else if (md === 'AND') ci = (this.buf[idx] & src) & mask;
+        else if (md === 'OR')  ci = (this.buf[idx] | src) & mask;
+        else if (md === 'PRESET') ci = (~src) & mask;
+        else ci = src & mask; // unknown → PSET
+        const rgb = this.colors[ci] || CGA16[ci & 15];
+        const o = idx * 4;
+        this.buf[idx] = ci; this.img.data[o] = rgb[0]; this.img.data[o + 1] = rgb[1]; this.img.data[o + 2] = rgb[2]; this.img.data[o + 3] = 255;
+      }
+    }
     this.blit();
   }
 

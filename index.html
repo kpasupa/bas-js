@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>bas-js</title>
+<link rel="icon" href="src/favicon.png">
 <style>
 
   @font-face {
@@ -15,6 +16,16 @@
     descent-override: 47%;
     size-adjust: 91.645%;
   }
+  /* Bundle Consolas so the terminal renders identically on machines without it (macOS, Linux). */
+  @font-face {
+    font-family: 'Consolas';
+    src: url('consola.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    size-adjust: 100%;
+    ascent-override: 94%;
+    descent-override: 30%;
+  }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body { display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -22,10 +33,10 @@
 
   #screen {
     font-family: 'Consolas','Menlo','Monaco','DejaVu Sans Mono','Courier New',monospace;
-    font-size: 18px; line-height: 1.15; letter-spacing: 0;
+    font-size: 18px; line-height: 21px; letter-spacing: 0;
     background: transparent; color: #aaa; padding: 8px; margin: 0;
     white-space: pre; display: inline-block; position: relative; z-index: 2;
-    width: 80ch; height: calc(25 * 1.15em); box-sizing: content-box;
+    width: 80ch; height: calc(25 * 21px); box-sizing: content-box;
     flex-shrink: 0;
   }
   #screen span { display: inline; }
@@ -39,14 +50,15 @@
   }
   #gate-pre {
     font-family: 'Consolas','Menlo','Monaco','DejaVu Sans Mono','Courier New',monospace;
-    font-size: 18px; line-height: 1.15; letter-spacing: 0;
+    font-size: 18px; line-height: 21px; letter-spacing: 0;
     background: #000; color: #aaa; padding: 8px; margin: 0;
     white-space: pre; display: inline-block;
-    width: 80ch; height: calc(25 * 1.15em); box-sizing: content-box;
+    width: 80ch; height: calc(25 * 21px); box-sizing: content-box;
     outline: none; overflow: hidden; flex-shrink: 0;
   }
   .gate-sel { background: #aaa; color: #000; }
   .gate-fk  { background: #aaa; color: #000; }
+  .gate-dim { color: #555; }
 
   #esc-hint { position: fixed; bottom: 8px; right: 12px; font-size: 11px; color: #333;
               display: none; pointer-events: none; }
@@ -65,36 +77,58 @@
   const _SKEY = 'bas-js-size';
   const _st   = JSON.parse(localStorage.getItem(_SKEY) || 'null');
 
-  // Restore immediately — handles Ctrl+R where outerW/H = 0 during reload.
-  if (_st) window.resizeTo(_st.w, _st.h);
+  // True when the user hit Ctrl+R / F5 — window is already the right size, skip resizeTo.
+  const _isReload = (() => {
+    try { return (performance.getEntriesByType('navigation')[0] || {}).type === 'reload'; } catch(e) {}
+    try { return performance.navigation.type === 1; } catch(e) {}
+    return false;
+  })();
+
+  // On first open restore saved size. On reload the size is already correct — calling
+  // resizeTo causes the browser to reposition the window (jump to corner).
+  if (!_isReload && _st) window.resizeTo(_st.w, _st.h);
 
   const _scrW = Math.round(_scr.getBoundingClientRect().width);
   const _scrH = Math.round(_scr.getBoundingClientRect().height);
 
-  // outerH is physical/OS-scale (not page-zoom-scaled).
-  // innerH is physical-viewport / DPR (page-zoom-scaled).
-  // outerH − innerH × DPR = actual physical chrome px, constant across any zoom.
-  function _measureCp() {
-    const dpr = window.devicePixelRatio || 1;
+  // Self-calibrating — no platform or DPR guess. resizeTo()/outerWidth use CSS px on some
+  // platforms (macOS) and physical px on others (Windows); the factor that converts between
+  // them is just outerWidth/innerWidth, measured live. In an --app window the horizontal chrome
+  // is ~0, so that ratio is the conversion factor directly (≈1 on macOS, ≈DPR on Windows),
+  // correct for any display density — Retina, HiDPI, or plain — without knowing the OS.
+  let _resizeTimer = null;
+  function fixSize(reason) {
+    // Skip resize if any fullscreen is active: programmatic (fullscreenElement) OR
+    // F11 browser fullscreen (window fills the entire screen — fullscreenElement stays null).
+    if (document.fullscreenElement || document.webkitFullscreenElement ||
+        (window.outerWidth === screen.width && window.outerHeight === screen.height)) { console.log('[fixSize] skip — fullscreen'); return; }
     const oW = window.outerWidth, oH = window.outerHeight;
-    if (oW < 5 || oH < 5) return null;
-    return { w: Math.round(oW - window.innerWidth * dpr),
-             h: Math.round(oH - window.innerHeight * dpr) };
-  }
-
-  let _cp = _measureCp() ?? { w: _st?.cpw ?? 0, h: _st?.cph ?? 0 };
-
-  function fixSize() {
-    const dpr = window.devicePixelRatio || 1;
-    const m = _measureCp();
-    if (m) _cp = m;
-    const w = Math.round(_cp.w + _scrW * dpr);
-    const h = Math.round(_cp.h + _scrH * dpr);
+    const iW = window.innerWidth, iH = window.innerHeight;
+    if (oW < 5 || oH < 5 || iW < 5 || iH < 5) { console.log('[fixSize] skip — window too small', {oW,oH,iW,iH}); return; }
+    const f = oW / iW;
+    const r = _scr.getBoundingClientRect();
+    const scrW = Math.round(r.width), scrH = Math.round(r.height);
+    const w = Math.round(f * scrW + (oW - f * iW));
+    const h = Math.round(f * scrH + (oH - f * iH));
+    console.log('[fixSize]', reason || 'unknown', { oW, oH, iW, iH, f: f.toFixed(3), scrW, scrH, targetW: w, targetH: h, delta: `${w-oW},${h-oH}` });
+    if (Math.abs(w - oW) <= 1 && Math.abs(h - oH) <= 1) { console.log('[fixSize] already correct, skip'); return; }
+    const sx = window.screenX, sy = window.screenY;
     window.resizeTo(w, h);
-    localStorage.setItem(_SKEY, JSON.stringify({ w, h, cpw: _cp.w, cph: _cp.h }));
+    window.moveTo(sx, sy);
+    console.log('[fixSize] resized → after:', { outerW: window.outerWidth, outerH: window.outerHeight });
+    localStorage.setItem(_SKEY, JSON.stringify({ w, h }));
   }
-  fixSize();
-  window.addEventListener('resize', fixSize);
+  if (!_isReload) fixSize('initial');
+  // Re-measure once webfonts load: 80ch is measured against the fallback font until then.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fixSize('fonts-ready'));
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => fixSize('resize-event'), 150);
+  });
+  // Resume auto-sizing when exiting fullscreen (F11 or programmatic).
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) fixSize('fullscreen-exit'); });
+  document.addEventListener('webkitfullscreenchange', () => { if (!document.webkitFullscreenElement) fixSize('fullscreen-exit'); });
+  window.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
 </script>
 
 <script src="src/codec/bytes.js"></script>
@@ -111,526 +145,9 @@
 <script src="src/term/screen.js"></script>
 <script src="src/term/printusing.js"></script>
 <script src="src/term/input.js"></script>
-<script src="src/print/report.js"></script>
+<script src="src/print/lprint.js"></script>
 <script src="src/interp/basic.js"></script>
 <script src="src/app.js"></script>
-
-<script>
-  const el      = document.getElementById('screen');
-  const gate    = document.getElementById('gate');
-  const gatePre = document.getElementById('gate-pre');
-  const escHint = document.getElementById('esc-hint');
-
-  // ── layout ──────────────────────────────────────────────────────────────────
-  const LI   = 38;  // inner width of each panel (between │ borders)
-  const ROWS = 17;  // content rows between the two border lines
-
-  // ── persisted data ───────────────────────────────────────────────────────────
-  // Keys use '_v3' suffix to signal schema version (old 'projects' key has
-  // incompatible format: {handle,boot,codec,name} vs {handle,name,files,subtree}).
-  let projects  = [];   // [{ handle, name, files: {'FILE.BAS': codec|null} }]
-  let recentBas = null; // { folderName, basFile, codec }
-  let autoRun   = true; // auto-execute recent BAS on load if permission live
-
-  async function loadData() {
-    projects  = (await idbGetKey('projects_v3'))  ?? [];
-    recentBas = (await idbGetKey('recentBas_v3')) ?? null;
-    autoRun   = (await idbGetKey('autoRun_v3'))   ?? true;
-  }
-  async function saveProjects() { await idbSetKey('projects_v3', projects); }
-  async function saveRecent()   { await idbSetKey('recentBas_v3', recentBas); }
-  async function saveAutoRun()  { await idbSetKey('autoRun_v3', autoRun); }
-
-  // ── ui state ────────────────────────────────────────────────────────────────
-  let panel         = 'left'; // 'recent' | 'left' | 'right'
-  let leftIdx       = 0;      // absolute index into leftItems[]
-  let leftOffset    = 0;      // scroll offset for left panel
-  let leftItems     = [];     // flat list: {type:'add'} | {type:'root',pi} | {type:'sub',pi,si,name}
-  let rightIdx      = 0;
-  let rightOffset   = 0;
-  let rightVisible  = false;  // right panel only appears after entering a folder
-  let selProjIdx    = -1;     // which project is open in the right panel
-  let rightPath     = '';     // current dir path being browsed ('' = project root)
-  let expandedProj  = -1;     // which project's subfolders are shown in left panel
-  let allRightFiles = [];     // full recursive file list from last scan
-  let rightItems    = [];     // dirs + files visible at rightPath level
-  let gateMsg       = '';
-
-  // ── right panel items ────────────────────────────────────────────────────────
-  // Slices allRightFiles to one level at rightPath, adding <DIR> entries for subdirs.
-  function rebuildRightItems() {
-    if (selProjIdx < 0) { rightItems = []; return; }
-    const prefix  = rightPath ? rightPath + '/' : '';
-    const subdirs = new Set();
-    const files   = [];
-    allRightFiles.forEach(f => {
-      if (!f.name.startsWith(prefix)) return;
-      const rest  = f.name.slice(prefix.length);
-      const slash = rest.indexOf('/');
-      if (slash >= 0) subdirs.add(rest.slice(0, slash));
-      else files.push({ name: rest, fullName: f.name, codec: f.codec });
-    });
-    rightItems = [];
-    [...subdirs].sort((a, b) => a.localeCompare(b)).forEach(d =>
-      rightItems.push({ type: 'dir', name: d, path: prefix + d })
-    );
-    files.sort((a, b) => a.name.localeCompare(b.name));
-    files.forEach(f => rightItems.push({ type: 'file', name: f.name, fullName: f.fullName, codec: f.codec }));
-  }
-
-  // ── left panel tree helpers ──────────────────────────────────────────────────
-  // ancestorIsLasts: one bool per ancestor above this node (root's isLast first).
-  // Determines whether each ancestor column draws │ or spaces.
-  function makePrefix(ancestorIsLasts, isLast) {
-    let p = ' ';
-    ancestorIsLasts.forEach(a => { p += a ? '   ' : '│  '; });
-    p += isLast ? '└─ ' : '├─ ';
-    return p; // length = 4 + 3 * ancestorIsLasts.length
-  }
-
-  function flattenTree(nodes, pi, ancestorIsLasts, parentPath) {
-    nodes.forEach((node, i) => {
-      const isLast = i === nodes.length - 1;
-      const path   = parentPath ? parentPath + '/' + node.name : node.name;
-      leftItems.push({ type: 'sub', pi, name: node.name, path, isLast, ancestorIsLasts: [...ancestorIsLasts] });
-      if (node.children?.length) {
-        flattenTree(node.children, pi, [...ancestorIsLasts, isLast], path);
-      }
-    });
-  }
-
-  function rebuildLeftItems() {
-    leftItems = [{ type: 'add' }];
-    projects.forEach((proj, pi) => {
-      const isLastRoot = pi === projects.length - 1;
-      const isExpanded = pi === expandedProj && proj.subtree?.length > 0;
-      leftItems.push({ type: 'root', pi, isLastRoot, isExpanded });
-      if (isExpanded) flattenTree(proj.subtree, pi, [isLastRoot], '');
-    });
-    clampLeft();
-  }
-
-  // ── codec registry ───────────────────────────────────────────────────────────
-  // To add a codec: append one entry here. Everything else (cycling, badge,
-  // runtime) updates automatically. id:null = raw bytes (always first).
-  const CODECS = [
-    { id: null,    badge: '',         runtime() { return null; } },
-    { id: 'cp437', badge: '(CP437)',  runtime() { return { display: cp437Display, encode: cp437Encode }; } },
-    { id: 'ku42',  badge: '(KU42)',   runtime() { return undefined; } },
-  ];
-
-  function cycleCodec(c) {
-    const i = CODECS.findIndex(x => x.id === (c ?? null));
-    return CODECS[((i < 0 ? 0 : i) + 1) % CODECS.length].id;
-  }
-  function codecBadge(c)      { return CODECS.find(x => x.id === (c ?? null))?.badge   ?? ''; }
-  function codecForRuntime(c) { return (CODECS.find(x => x.id === (c ?? null)) ?? CODECS[0]).runtime(); }
-
-  // ── text helpers ─────────────────────────────────────────────────────────────
-  function gpad(s, w) { s = String(s); return s + ' '.repeat(Math.max(0, w - s.length)); }
-  function hesc(s)    { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-  function panelHeader(title, inner) {
-    const t   = ' ' + String(title).substring(0, inner - 4) + ' ';
-    const rem = inner - t.length;
-    const l   = Math.floor(rem / 2);
-    return '┌' + '─'.repeat(l) + t + '─'.repeat(rem - l) + '┐';
-  }
-
-  // ── left panel row ───────────────────────────────────────────────────────────
-  function leftRowHtml(r) {
-    const ri    = leftOffset + r;
-    const item  = leftItems[ri];
-    if (!item) return hesc('│' + ' '.repeat(LI) + '│');
-    const isSel = panel === 'left' && leftIdx === ri;
-
-    if (item.type === 'add') {
-      const inner = gpad(' \\  ADD NEW FOLDER TO LIST', LI);
-      if (isSel) return hesc('│') + '<span class="gate-sel">' + hesc(inner) + '</span>' + hesc('│');
-      return hesc('│' + inner + '│');
-    }
-
-    if (item.type === 'root') {
-      const proj   = projects[item.pi];
-      const prefix = ' ' + (item.isLastRoot ? '└─ ' : '├─ ');  // 4 chars — always └─ if last root
-      const name   = gpad(proj.name, LI - 4);
-      if (isSel) return hesc('│') + hesc(prefix) + '<span class="gate-sel">' + hesc(name) + '</span>' + hesc('│');
-      return hesc('│' + prefix + name + '│');
-    }
-
-    if (item.type === 'sub') {
-      const prefix = makePrefix(item.ancestorIsLasts, item.isLast);
-      const name   = gpad(item.name, LI - prefix.length);
-      if (isSel) return hesc('│') + hesc(prefix) + '<span class="gate-sel">' + hesc(name) + '</span>' + hesc('│');
-      return hesc('│' + prefix + name + '│');
-    }
-
-    return hesc('│' + ' '.repeat(LI) + '│');
-  }
-
-  // ── right panel row ──────────────────────────────────────────────────────────
-  function rightRowHtml(r) {
-    if (!rightVisible) {
-      const inner = r === 8 ? gpad('  ← select a folder and press Enter', LI) : ' '.repeat(LI);
-      return hesc('│' + inner + '│');
-    }
-
-    const ri   = rightOffset + r;
-    const item = rightItems[ri];
-    if (!item) return hesc('│' + ' '.repeat(LI) + '│');
-
-    const isSel = panel === 'right' && ri === rightIdx;
-    let inner;
-    if (item.type === 'dir') {
-      inner = gpad(' ' + item.name, LI - 6) + '<DIR> ';
-    } else {
-      const badge = codecBadge(item.codec);
-      inner = gpad(' ' + item.name, LI - badge.length - 1) + badge + ' ';
-    }
-
-    if (isSel) return hesc('│') + '<span class="gate-sel">' + hesc(inner) + '</span>' + hesc('│');
-    return hesc('│' + inner + '│');
-  }
-
-  // ── F-key bar (line 25) ──────────────────────────────────────────────────────
-  const fk = s => '<span class="gate-fk">' + hesc(s) + '</span>';
-  function fkeyBar() {
-    const fkeys = [
-      ['1','ADD','  '], ['2','REMOVE','  '], ['3','ENCODING"','  '],
-      ['4', autoRun ? 'AUTORUN[X]' : 'AUTORUN[ ]', '  '],
-    ];
-    const chips = fkeys.map(([n, label, trail]) =>
-      hesc(n) + '<span class="gate-fk">' + hesc(label) + '</span>' + hesc(trail)
-    ).join('');
-    const nav =
-      hesc('↑↓') + fk('NAV') +
-      hesc('  ↲') + fk('Select') +
-      hesc('  [Ctrl+C,BREAK,PAUSE]') + fk('EXIT');
-    return chips + nav;
-  }
-
-  // ── draw ─────────────────────────────────────────────────────────────────────
-  function draw() {
-    const lines = [];
-
-    // lines 1-4: header
-    lines.push(hesc('bas-js 1.3.11'));
-    lines.push(hesc('(C) Copyright KRIT PASUPA'));
-    lines.push(hesc('github.com/kpasupa'));
-    lines.push('');
-
-    // line 5: recent BAS (selectable) or status message
-    if (recentBas) {
-      const badge = recentBas.codec ? ' (' + recentBas.codec.toUpperCase() + ')' : '';
-      const rline = gpad('Recent BAS: ' + recentBas.folderName + '/' + recentBas.basFile + badge, 80);
-      lines.push(panel === 'recent'
-        ? '<span class="gate-sel">' + hesc(rline) + '</span>'
-        : hesc(rline));
-    } else {
-      lines.push(hesc(gateMsg));
-    }
-
-    // line 6: panel headers
-    const rBase  = selProjIdx >= 0 ? (projects[selProjIdx]?.name || '') : '';
-    const rTitle = rBase ? rBase + (rightPath ? '/' + rightPath : '') : 'SELECT A FOLDER';
-    lines.push(hesc(panelHeader('LIST', LI)) + hesc(panelHeader(rTitle, LI)));
-
-    // lines 7-23: content rows
-    for (let r = 0; r < ROWS; r++) lines.push(leftRowHtml(r) + rightRowHtml(r));
-
-    // line 24: bottom borders
-    lines.push(hesc('└' + '─'.repeat(LI) + '┘' + '└' + '─'.repeat(LI) + '┘'));
-
-    // line 25: F-key bar (pre-rendered HTML)
-    gatePre.innerHTML = lines.join('\n') + '\n' + fkeyBar();
-  }
-
-  // ── scroll helpers ───────────────────────────────────────────────────────────
-  const leftTotal = () => leftItems.length;
-
-  function clampLeft() {
-    leftIdx    = Math.max(0, Math.min(leftIdx, leftTotal() - 1));
-    if (leftIdx < leftOffset) leftOffset = leftIdx;
-    if (leftIdx >= leftOffset + ROWS) leftOffset = leftIdx - ROWS + 1;
-    leftOffset = Math.max(0, leftOffset);
-  }
-  function clampRight() {
-    rightIdx = Math.max(0, Math.min(rightIdx, rightItems.length - 1));
-    if (rightIdx < rightOffset) rightOffset = rightIdx;
-    if (rightIdx >= rightOffset + ROWS) rightOffset = rightIdx - ROWS + 1;
-  }
-
-  // ── recursive .BAS scanner ──────────────────────────────────────────────────
-  async function scanDir(dirHandle, prefix, existing, found) {
-    for await (const entry of dirHandle.values()) {
-      if (entry.kind === 'file' && entry.name.toUpperCase().endsWith('.BAS')) {
-        const n = (prefix ? prefix + '/' : '') + entry.name;
-        found.push({ name: n, codec: n in existing ? existing[n] : null });
-      } else if (entry.kind === 'directory') {
-        const sub       = await dirHandle.getDirectoryHandle(entry.name);
-        const subPrefix = prefix ? prefix + '/' + entry.name : entry.name;
-        await scanDir(sub, subPrefix, existing, found);
-      }
-    }
-  }
-
-  // ── build recursive directory tree for left panel ───────────────────────────
-  // validDirs: Set of paths that contain at least one .BAS file somewhere inside.
-  async function buildDirTree(dirHandle, validDirs, prefix) {
-    const children = [];
-    for await (const entry of dirHandle.values()) {
-      if (entry.kind === 'directory') {
-        const childPath = prefix ? prefix + '/' + entry.name : entry.name;
-        if (!validDirs.has(childPath)) continue;
-        const childHandle = await dirHandle.getDirectoryHandle(entry.name);
-        const childTree   = await buildDirTree(childHandle, validDirs, childPath);
-        children.push({ name: entry.name, children: childTree });
-      }
-    }
-    children.sort((a, b) => a.name.localeCompare(b.name));
-    return children;
-  }
-
-  // ── scan a project folder and update all state ───────────────────────────────
-  // Permission must already be granted before calling this.
-  async function scanAndSetup(pi) {
-    const proj      = projects[pi];
-    const existing  = proj.files || {};
-    const found     = [];
-    const validDirs = new Set();
-    await scanDir(proj.handle, '', existing, found);
-    found.forEach(f => {
-      const parts = f.name.split('/');
-      for (let i = 1; i < parts.length; i++) validDirs.add(parts.slice(0, i).join('/'));
-    });
-    const subtree = await buildDirTree(proj.handle, validDirs, '');
-    found.sort((a, b) => a.name.localeCompare(b.name));
-    proj.files   = {};
-    found.forEach(f => { proj.files[f.name] = f.codec; });
-    proj.subtree = subtree;
-    await saveProjects();
-    expandedProj  = pi;
-    allRightFiles = found;
-    selProjIdx    = pi;
-    rightPath     = '';
-    rightVisible  = true;
-    rightIdx      = 0;
-    rightOffset   = 0;
-    rebuildRightItems();
-    rebuildLeftItems();
-  }
-
-  // ── grant permission + scan .BAS files ───────────────────────────────────────
-  // Called from keydown Enter — requestPermission() as first await keeps gesture alive.
-  async function grantAndScan(pi) {
-    const proj = projects[pi];
-    gateMsg = 'Requesting permission…'; draw();
-    try {
-      const perm = await proj.handle.requestPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') { gateMsg = 'Permission denied.'; draw(); return false; }
-    } catch(e) { gateMsg = 'Error: ' + e.message; draw(); return false; }
-    gateMsg = 'Scanning…'; draw();
-    try { await scanAndSetup(pi); } catch(e) { gateMsg = 'Scan error: ' + e.message; draw(); return false; }
-    gateMsg = ''; return true;
-  }
-
-  // ── auto-run recent BAS if folder permission is still live ───────────────────
-  // Uses queryPermission (no gesture needed) — silently no-ops if permission expired.
-  async function tryAutoRun() {
-    if (!autoRun || !recentBas) return;
-    const pi = projects.findIndex(p => p.name === recentBas.folderName);
-    if (pi < 0) return;
-    try {
-      const perm = await projects[pi].handle.queryPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') return;
-      await scanAndSetup(pi);
-      const f = allRightFiles.find(x => x.name === recentBas.basFile);
-      if (f) await runBas(pi, f);
-    } catch(e) { /* permission expired or file gone — just stay on gate */ }
-  }
-
-  // ── run a BAS file ───────────────────────────────────────────────────────────
-  async function runBas(pi, item) {
-    const proj = projects[pi];
-    const boot = item.name.replace(/\.BAS$/i, '');
-    await setActiveProject({ handle: proj.handle, boot, name: proj.name, codec: item.codec || 'none' });
-    window._bas_codec = codecForRuntime(item.codec);
-
-    recentBas = { folderName: proj.name, basFile: item.name, codec: item.codec };
-    await saveRecent();
-
-    hideGate();
-    await connectAndRun(el, (msg) => { gateMsg = msg; }, false, () => {});
-    showGate();
-  }
-
-  // ── add folder ───────────────────────────────────────────────────────────────
-  // Called synchronously from keydown — showDirectoryPicker() as first await keeps gesture alive.
-  async function openAddFolder() {
-    try {
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      if (projects.some(p => p.name === handle.name)) {
-        gateMsg = '"' + handle.name + '" is already in the list.'; draw(); return;
-      }
-      projects.push({ handle, name: handle.name, files: {}, subtree: [] });
-      await saveProjects();
-      rebuildLeftItems();
-      leftIdx = leftItems.length - 1; // select newly added root entry
-      clampLeft();
-      gateMsg = '';
-      draw();
-    } catch(e) {
-      if (e.name !== 'AbortError') { gateMsg = 'Error: ' + e.message; draw(); }
-    }
-  }
-
-  // ── remove folder ─────────────────────────────────────────────────────────────
-  async function removeFolder(pi) {
-    if (!confirm('Remove "' + projects[pi].name + '" from list?')) return;
-    projects.splice(pi, 1);
-    if (selProjIdx === pi)     { rightVisible = false; selProjIdx = -1; allRightFiles = []; rightItems = []; rightPath = ''; }
-    else if (selProjIdx > pi)  { selProjIdx--; }
-    if (expandedProj === pi)   { expandedProj = -1; }
-    else if (expandedProj > pi){ expandedProj--; }
-    await saveProjects();
-    rebuildLeftItems();
-    clampLeft();
-    draw();
-  }
-
-  // ── keyboard ─────────────────────────────────────────────────────────────────
-  function gateKeydown(e) {
-
-    // ── global: 4 toggles autorun ──────────────────────────────
-    if (e.key === '4' || e.key === 'F4') {
-      e.preventDefault(); autoRun = !autoRun; saveAutoRun(); draw(); return;
-    }
-
-    // ── recent BAS row ─────────────────────────────────────────
-    if (panel === 'recent') {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault(); panel = 'left'; leftIdx = 0; draw();
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (!recentBas) return;
-        const pi = projects.findIndex(p => p.name === recentBas.folderName);
-        if (pi < 0) { gateMsg = 'Folder not found.'; panel = 'left'; draw(); return; }
-        grantAndScan(pi).then(ok => {
-          if (!ok) return;
-          const item = allRightFiles.find(f => f.name === recentBas.basFile);
-          if (item) runBas(pi, item);
-          else { panel = 'right'; draw(); }
-        });
-      }
-      return;
-    }
-
-    // ── left panel ─────────────────────────────────────────────
-    if (panel === 'left') {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault(); leftIdx++; clampLeft(); draw();
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (leftIdx === 0 && recentBas) { panel = 'recent'; draw(); }
-        else { leftIdx--; clampLeft(); draw(); }
-      } else if (e.key === 'ArrowRight' || (e.key === 'Tab' && !e.shiftKey)) {
-        e.preventDefault();
-        if (rightVisible) { panel = 'right'; draw(); }
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        const item = leftItems[leftIdx];
-        if (!item) return;
-        if (item.type === 'add') {
-          openAddFolder();
-        } else if (item.type === 'root') {
-          grantAndScan(item.pi).then(ok => { if (ok) { panel = 'right'; draw(); } });
-        } else if (item.type === 'sub') {
-          rightPath = item.path; rebuildRightItems();
-          rightIdx  = 0; rightOffset = 0;
-          panel     = 'right'; draw();
-        }
-      } else if (e.key === '1' || e.key === 'F1') {
-        e.preventDefault(); openAddFolder();
-      } else if (e.key === '2' || e.key === 'F2' || e.key === 'Delete') {
-        e.preventDefault();
-        const item = leftItems[leftIdx];
-        if (item?.type === 'root') removeFolder(item.pi);
-      }
-      return;
-    }
-
-    // ── right panel ────────────────────────────────────────────
-    if (panel === 'right') {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault(); rightIdx++; clampRight(); draw();
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault(); rightIdx--; clampRight(); draw();
-      } else if (e.key === 'ArrowLeft' || e.key === 'Escape' || (e.key === 'Tab' && e.shiftKey) || e.key === 'Tab') {
-        e.preventDefault(); panel = 'left'; draw();
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        const ri = rightItems[rightIdx];
-        if (!ri) return;
-        if (ri.type === 'dir') {
-          rightPath = ri.path; rebuildRightItems();
-          rightIdx = 0; rightOffset = 0; draw();
-        } else if (ri.type === 'file') {
-          const f = allRightFiles.find(x => x.name === ri.fullName);
-          if (f) runBas(selProjIdx, f);
-        }
-      } else if (e.key === 'F3' || e.key === '3') {
-        e.preventDefault();
-        const ri = rightItems[rightIdx];
-        if (!ri || ri.type !== 'file') return;
-        const f = allRightFiles.find(x => x.name === ri.fullName);
-        if (!f) return;
-        f.codec  = cycleCodec(f.codec);
-        ri.codec = f.codec;
-        projects[selProjIdx].files[f.name] = f.codec;
-        saveProjects(); draw();
-      }
-    }
-  }
-
-  // ── gate show / hide ─────────────────────────────────────────────────────────
-  function showGate() {
-    gate.style.display = 'flex';
-    escHint.style.display = 'none';
-    document.title = 'bas-js';
-    leftOffset = 0; gateMsg = '';
-    if (recentBas) { panel = 'recent'; leftIdx = 0; }
-    else            { panel = 'left';   leftIdx = 0; }
-    rebuildLeftItems();
-    draw();
-    window.addEventListener('keydown', gateKeydown);
-    gatePre.focus();
-  }
-  function hideGate() {
-    gate.style.display = 'none';
-    escHint.style.display = 'block';
-    el.focus();
-    document.title = 'bas-js - running';
-    window.removeEventListener('keydown', gateKeydown);
-  }
-
-  // Ctrl+C / Ctrl+Break abort while program is running
-  window.addEventListener('keydown', e => {
-    if (!window._activeTerm) return;
-    if (e.ctrlKey && (e.key === 'c' || e.key === 'C' || e.key === 'Pause' || e.key === 'Break')) {
-      e.preventDefault(); window._activeTerm.abort();
-    }
-  });
-
-  // ── init ────────────────────────────────────────────────────────────────────
-  (async () => {
-    try {
-      await loadData();
-      showGate();
-      tryAutoRun(); // non-blocking: silently runs recent BAS if permission still live
-    } catch(err) {
-      gatePre.textContent = 'INIT ERROR:\n' + err.stack;
-    }
-  })();
-</script>
+<script src="src/gate.js"></script>
 </body>
 </html>

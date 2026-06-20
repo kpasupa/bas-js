@@ -31,19 +31,40 @@ function printUsing(mask, value) {
   return fracSlots ? `${intPart}.${fp}` : intPart;
 }
 
-// Multi-field PRINT USING: walk the mask, formatting one value per numeric field ('#'-run)
-// and emitting literals as-is. '_' escapes the next char as a literal. Used by the
-// interpreter for masks like "##_/##_/##";PDD;PMM;PYY -> "31/ 5/26".
+// Multi-field PRINT USING: walk the mask, formatting one value per numeric/string field.
+// '#' runs → numeric field.  '$$...' → floating-dollar numeric.  '&' → full string.
+// '\  \' (backslash + N spaces + backslash) → fixed N+2-char string.  '_x' → literal x.
 function formatUsing(mask, values) {
   let out = '', vi = 0, i = 0;
   while (i < mask.length) {
     const c = mask[i];
     if (c === '_') { out += mask[i + 1] ?? ''; i += 2; continue; }
+    // Floating dollar sign: $$[#,.]... — prefix result with '$', then format numerically
+    if (c === '$' && mask[i + 1] === '$') {
+      let j = i + 2, field = '';
+      while (j < mask.length && '#,.'.includes(mask[j])) { field += mask[j]; j++; }
+      const numStr = printUsing(field || '#', Number(values[vi++] ?? 0));
+      out += '$' + numStr.trimStart();
+      i = j; continue;
+    }
     if (c === '#') {
       let j = i, field = '';
       while (j < mask.length && '#,.'.includes(mask[j])) { field += mask[j]; j++; }
       out += printUsing(field, Number(values[vi++] ?? 0));
       i = j; continue;
+    }
+    // Variable-length string field: '&' → full string value of next arg
+    if (c === '&') { out += String(values[vi++] ?? ''); i++; continue; }
+    // Fixed-length string field: '\' + spaces + '\' → left N+2 chars of next arg
+    if (c === '\\') {
+      let j = i + 1;
+      while (j < mask.length && mask[j] === ' ') j++;
+      if (j < mask.length && mask[j] === '\\') {
+        const width = j - i + 1; // includes both backslashes
+        const s = String(values[vi++] ?? '');
+        out += s.length >= width ? s.slice(0, width) : s.padEnd(width, ' ');
+        i = j + 1; continue;
+      }
     }
     out += c; i++;
   }

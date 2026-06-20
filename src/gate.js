@@ -273,7 +273,7 @@ function draw() {
   const lines = [];
 
   // lines 1-3: header (2 info lines + clock speed control)
-  lines.push(hesc('bas-js 1.3.67'));
+  lines.push(hesc('bas-js 1.4.0'));
   lines.push(hesc('(C) Copyright Krit Pasupa, github.com/kpasupa'));
   lines.push(clockSpeedLine());
   lines.push('');

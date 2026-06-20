@@ -64,7 +64,31 @@ Navigate to the `Clock: [NORMAL]` line at the top and press **Enter** to cycle t
 
 | Key | Action |
 |-----|--------|
-| `Ctrl+C+C` | Abort program and return to gate |
+| `Ctrl+C+C` | Abort program and return to gate (double-tap ≤500 ms) |
+| `Ctrl+V` | Paste clipboard text into the program |
+| `Ctrl+V+V` | Send `CHR$(22)` to the program (double-tap ≤500 ms) |
+| `F11` | Browser fullscreen — `fixSize` is suspended until exit |
+| `F12` | Open browser DevTools |
+
+---
+
+## Keyboard input
+
+The interpreter maps browser key events to GW-BASIC scan codes.
+
+| Key | BASIC value | Notes |
+|-----|-------------|-------|
+| Printable keys | `CHR$(code)` | As typed |
+| `Ctrl+A` … `Ctrl+Z` | `CHR$(1)` … `CHR$(26)` | Ctrl+W/T/N/R pass to browser |
+| `F1` … `F10` | `CHR$(0)+CHR$(59)` … `CHR$(0)+CHR$(68)` | Also triggers `ON KEY(n)` trap |
+| `Shift+F1` … `Shift+F10` | `CHR$(0)+CHR$(84)` … `CHR$(0)+CHR$(93)` | No `ON KEY` trap |
+| `↑ ↓ ← →` | `CHR$(0)+CHR$(72/80/75/77)` | Also triggers `ON KEY(11/14/12/13)` |
+| `Home` / `End` | `CHR$(0)+CHR$(71/79)` | `Ctrl+` variants: `CHR$(0)+CHR$(119/117)` |
+| `PgUp` / `PgDn` | `CHR$(0)+CHR$(73/81)` | `Ctrl+` variants: `CHR$(0)+CHR$(132/118)` |
+| `Insert` / `Delete` | `CHR$(0)+CHR$(82/83)` | |
+| `F11` / `F12` | — | Pass to browser (fullscreen / DevTools) |
+
+`INKEY$` returns extended keys as a 2-character string in one call (matches real GW-BASIC). `INPUT$(1)` splits them: `CHR$(0)` on the first call, the scan code on the next.
 
 ---
 
@@ -124,7 +148,7 @@ Place a `favicon.ico` or `favicon.png` in your project folder and it will appear
 
 ---
 
-## Reports
+## LPRINT / Print preview
 
 `LPRINT` output is captured and rendered as an HTML table using column positions from a `|`-delimited ruler line. Any program that prints a ruler followed by data rows becomes a formatted table automatically. Triggers the browser's native print/PDF dialog.
 

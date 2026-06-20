@@ -1,12 +1,9 @@
 10 COMMON SC,TC,BACK
-20 REM arrived by CHAIN - screen is still in graphics mode with the picked colours
-30 CLS
-40 LOCATE 4,4:PRINT "You came here by CHAIN."
-50 LOCATE 6,4:PRINT "Your screen colour is";SC
-60 LOCATE 7,4:PRINT "Your text   colour is";TC
-70 LOCATE 9,4:PRINT "Both carried over from the picker."
-80 LOCATE 10,4:PRINT "This very text is your picked colour"
-90 LOCATE 11,4:PRINT "on your picked background."
-100 LOCATE 14,4:PRINT "Press a key to go back..."
-110 A$=INPUT$(1)
-120 BACK=1:CHAIN "GWBASIC/COLOR/PICK"
+20 REM Arrived via CHAIN from PICK — SCREEN 0, colour TC on background SC already set
+30 LOCATE 3,10: PRINT "You arrived here by CHAIN."
+40 LOCATE 5,10: PRINT "Text colour:"; TC; "  Background:"; SC
+50 LOCATE 7,10: PRINT "This text is displaying in your chosen colours."
+60 LOCATE 9,10: PRINT "The colour survived the CHAIN boundary."
+70 LOCATE 11,10: PRINT "Press a key to go back..."
+80 A$=INPUT$(1)
+90 BACK=1: CHAIN "GWBASIC/COLOR/PICK"

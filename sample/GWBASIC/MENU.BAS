@@ -4,7 +4,7 @@
 40 LOCATE 4,5: PRINT "1.  Commands      FILES, KILL, NAME, RESET, SYSTEM"
 50 LOCATE 5,5: PRINT "2.  Statements    PRINT USING, files, graphics, sound, event traps"
 60 LOCATE 6,5: PRINT "3.  Functions     INKEY$, CVS/MKS$, DATE$, POINT, FRE..."
-70 LOCATE 7,5: PRINT "4.  Screen+Colour SCREEN 1 graphics + CHAIN colour round-trip"
+70 LOCATE 7,5: PRINT "4.  Text Colour   COLOR / TEXT mode + CHAIN colour round-trip"
 80 LOCATE 9,5: PRINT "0.  Back"
 90 LOCATE 10,1: PRINT STRING$(80,45)
 100 LOCATE 12,5: COLOR 0,7: PRINT " Choose (0-4): ": COLOR 7,0

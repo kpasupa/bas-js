@@ -110,6 +110,20 @@ Hardware keywords (PEEK/POKE/CALL/INP/OUT/WAIT/VARPTR) and editor commands (LIST
 
 ---
 
+## Custom icon (favicon)
+
+Place a `favicon.ico` or `favicon.png` in your project folder and it will appear in the browser tab while a program is running.
+
+**Lookup order** (first match wins):
+
+1. `favicon.ico` / `favicon.png` in the same sub-directory as the currently running `.BAS` file
+2. `favicon.ico` / `favicon.png` at the project root
+3. The app's own `src/favicon.ico` / `src/favicon.png` (shown in the gate and as the fallback)
+
+**Windows taskbar:** when launched via `run.bat` or `run.sh` (`--app` mode), the favicon also appears as the taskbar icon — so each project can have its own icon. Tested on Windows 10 and 11. macOS does not support this; the Dock always shows the Chrome or Edge icon regardless of the favicon.
+
+---
+
 ## Reports
 
 `LPRINT` output is captured and rendered as an HTML table using column positions from a `|`-delimited ruler line. Any program that prints a ruler followed by data rows becomes a formatted table automatically. Triggers the browser's native print/PDF dialog.

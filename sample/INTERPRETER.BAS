@@ -1,17 +1,15 @@
-10 CLS
-20 PRINT "============================================"
-30 PRINT "   GW-BASIC interpreter - command test menu"
-40 PRINT "============================================"
-50 PRINT
-60 PRINT "  1.  BASIC      (portable core)"
-70 PRINT "  2.  GW-BASIC   (PC / MS-DOS extensions)"
-80 PRINT
-90 PRINT "  0.  Quit"
-100 PRINT
-110 PRINT "(blank = done; else SKIP / TODO / PART / DUMMY)"
-120 PRINT
-130 INPUT "Choose";N
-140 IF N=1 THEN CHAIN "BASIC/MENU"
-150 IF N=2 THEN CHAIN "GWBASIC/MENU"
-160 IF N=0 THEN CLS:PRINT "Bye.":END
-170 GOTO 10
+10 CLS: COLOR 7,0
+20 LOCATE 1,28: COLOR 0,7: PRINT " bas-js Interpreter Demo ": COLOR 7,0
+30 LOCATE 2,1: PRINT STRING$(80,45)
+40 LOCATE 4,5: PRINT "1.  BASIC        Core language (GOTO, FOR, GOSUB, arrays, DEF FN...)"
+50 LOCATE 5,5: PRINT "2.  GW-BASIC     PC extensions (files, graphics, sound, event traps)"
+60 LOCATE 6,5: PRINT "3.  Feature Demo Colors, INPUT, LPRINT, CHAIN..."
+70 LOCATE 8,5: PRINT "0.  Quit"
+80 LOCATE 9,1: PRINT STRING$(80,45)
+90 LOCATE 11,5: COLOR 0,7: PRINT " Choose (0-3): ": COLOR 7,0
+100 LOCATE 11,21: INPUT "",N
+110 IF N=1 THEN CHAIN "BASIC/MENU"
+120 IF N=2 THEN CHAIN "GWBASIC/MENU"
+130 IF N=3 THEN CHAIN "MENU"
+140 IF N=0 THEN CLS: END
+150 GOTO 10

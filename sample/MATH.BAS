@@ -12,4 +12,5 @@
 130 IF QF=1 THEN LOCATE 11,5: PRINT "You arrived here via CHAIN — ENTER returns to MENU."
 140 LOCATE 13,5: INPUT "Press ENTER to continue...", X$
 150 IF QF=1 THEN QF = 0: CHAIN "MENU"
-160 END
+160 LOCATE 15,5: INPUT "Press ENTER to continue...", X$
+170 CHAIN "INTERPRETER"

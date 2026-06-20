@@ -1132,11 +1132,11 @@ class Basic {
       case 'width': { const n = num(await this.evl(st.cols)); this.s.setTextCols(n === 40 ? 40 : 80); return null; }
       case 'gscreen': {
         const m = num(await this.evl(st.mode));
-        // GFX modes with fixed hardware column width: SCREEN 1/7/13 = 40-col, SCREEN 2/9/10/11/12 = 80-col.
-        // SCREEN 0 (text mode) does NOT change WIDTH — it preserves whatever WIDTH the program set.
+        // GFX modes with fixed hardware column width: SCREEN 1/7/13 = 40-col, all others 80-col.
+        // SCREEN 0 restores 80 columns — real GW-BASIC resets width when returning to text mode.
         // setTextCols must run BEFORE gfx.screen() so _fit() sizes the canvas to match.
         if (m === 1 || m === 7 || m === 13) this.s.setTextCols(40);
-        else if (m !== 0) this.s.setTextCols(80);
+        else this.s.setTextCols(80);
         if (this.gfx) this.gfx.screen(m);
         if (m === 0) { this.s.gfx = null; this.s.color(7, 0); this.s.cls(); }      // back to text: default grey/black
         else { this.s.gfx = this.gfx; this.s.color(m === 2 || m === 11 ? 1 : (m === 1 ? 3 : 15), 0); this.s.clearTransparent(); } // graphics: white text on bg 0, shared palette

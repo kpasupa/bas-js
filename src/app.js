@@ -64,7 +64,13 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
     while (prog) {
       document.title = prog.replace(/.*[/\\]/, '').toUpperCase() + '.BAS';
       _setFavicon(await _loadFavicon(basDir));
-      const src = await loadBas(prog);
+      let src = await loadBas(prog);
+      if (src == null && basDir) {
+        // Bare CHAIN name not found in current dir — try root (handles back-navigation
+        // across directory boundaries, e.g. GWBASIC/MENU chaining to root INTERPRETER).
+        const bare = prog.slice(basDir.length);
+        if (bare && !/[/\\]/.test(bare)) { const rs = await loadBas(bare); if (rs != null) { src = rs; prog = bare; basDir = ''; } }
+      }
       if (src == null) {
         console.error(`[bas] program "${prog}.BAS" not found in folder`);
         s.color(7, 0); s.locate(25, 1); s.put(`[ "${prog}" not found — press any key ]`); s.render(); await term.inputKey(); break;

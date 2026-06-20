@@ -72,8 +72,6 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
       const res = await bas.runText(src);
       if (!bas.printer.isEmpty()) { showPrintPreview(bas.printer.lines, prog); bas.printer.reset(); }
       if (res && res.t === 'chain') {
-        if (gfxEl) { gfxEl.style.display = 'none'; const _c = gfxEl.getContext('2d'); if (_c) _c.clearRect(0, 0, gfxEl.width, gfxEl.height); }
-        s.setTextCols(80); s.color(7, 0); s.cls();
         console.info(`[bas] ${prog}.BAS → CHAIN ${res.name}`);
         // Bare name (no slash) → same directory as the current program.
         // Explicit path (e.g. "other/GAME") → used as-is.

@@ -3,6 +3,10 @@
 # Opens index.html in a dedicated Chrome/Edge/Chromium app window.
 # The separate --user-data-dir keeps the saved folder permission isolated
 # from your regular browser profile.
+#
+# To use your default Chrome profile instead (so AutoRun and project list are
+# shared with the browser), comment out or clear the PROFILE line below:
+
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 HTML="$DIR/index.html"
@@ -28,4 +32,8 @@ if [ -z "$BROWSER" ]; then
 fi
 
 echo "Launching: $BROWSER"
-"$BROWSER" --app="file://$HTML" --user-data-dir="$PROFILE" >/dev/null 2>&1 &
+if [ -n "$PROFILE" ]; then
+  "$BROWSER" --app="file://$HTML" --user-data-dir="$PROFILE" >/dev/null 2>&1 &
+else
+  "$BROWSER" --app="file://$HTML" >/dev/null 2>&1 &
+fi

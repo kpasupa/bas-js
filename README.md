@@ -20,6 +20,8 @@ Built to revive old DOS GW-BASIC applications. Point it at any folder of `.BAS` 
 
 No server, no build step, no install.
 
+> **AutoRun and the browser profile:** By default, `run.bat` / `run.sh` launches Chrome with a dedicated profile (`--user-data-dir`), keeping file permissions isolated from your regular browser. AutoRun settings and project lists are stored in that profile, so they will not be visible if you open `index.html` directly in the browser. To share state between the launcher and the browser, comment out or clear the `PROFILE` line in the run script — Chrome will then use its default profile.
+
 ---
 
 ## Gate UI

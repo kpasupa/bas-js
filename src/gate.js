@@ -14,16 +14,26 @@ const LI   = 38;  // inner width of each panel (between │ borders)
 const ROWS = 17;  // content rows between the two border lines
 
 // ── persisted data ───────────────────────────────────────────────────────────
-// Keys use '_v3' suffix to signal schema version (old 'projects' key has
-// incompatible format: {handle,boot,codec,name} vs {handle,name,files,subtree}).
-let projects  = [];   // [{ handle, name, files: {'FILE.BAS': codec|null} }]
-let recentBas = null; // { folderName, basFile, codec }
-let autoRun   = true; // auto-execute recent BAS on load if permission live
+const IDB = { PROJECTS: 'projects_v3', RECENT: 'recentBas_v3', AUTORUN: 'autoRun_v3', CLOCK: 'clockSpeed_v1' };
+
+let projects    = [];   // [{ handle, name, files: {'FILE.BAS': codec|null} }]
+let recentBas   = null; // { folderName, basFile, codec }
+let autoRun     = true; // auto-execute recent BAS on load if permission live
+let clockSpeed  = 1;    // 0=SLOW 1=NORM 2=FAST 3=MAX
+
+// Clock speed presets: label shown in UI + ms delay added to every backward GOTO.
+const CLOCK_SPEEDS = [
+  { label: 'SLOW', ms: 100 },
+  { label: 'NORM', ms: 33  },
+  { label: 'FAST', ms: 8   },
+  { label: 'MAX',  ms: 0   },
+];
 
 async function loadData() {
-  projects  = (await idbGetKey('projects_v3'))  ?? [];
-  recentBas = (await idbGetKey('recentBas_v3')) ?? null;
-  autoRun   = (await idbGetKey('autoRun_v3'))   ?? true;
+  projects   = (await idbGetKey(IDB.PROJECTS)) ?? [];
+  recentBas  = (await idbGetKey(IDB.RECENT))   ?? null;
+  autoRun    = (await idbGetKey(IDB.AUTORUN))  ?? false;
+  clockSpeed = (await idbGetKey(IDB.CLOCK))    ?? 1;
   // Migrate old string codec IDs → numeric; add folderCodecs if missing.
   let migrated = false;
   const remap = { 'cp437': 1, 'ku42': 2 };
@@ -36,12 +46,13 @@ async function loadData() {
   });
   if (migrated) await saveProjects();
 }
-async function saveProjects() { await idbSetKey('projects_v3', projects); }
-async function saveRecent()   { await idbSetKey('recentBas_v3', recentBas); }
-async function saveAutoRun()  { await idbSetKey('autoRun_v3', autoRun); }
+async function saveProjects()   { await idbSetKey(IDB.PROJECTS, projects); }
+async function saveRecent()     { await idbSetKey(IDB.RECENT,   recentBas); }
+async function saveAutoRun()    { await idbSetKey(IDB.AUTORUN,  autoRun); }
+async function saveClockSpeed() { await idbSetKey(IDB.CLOCK,    clockSpeed); }
 
 // ── ui state ────────────────────────────────────────────────────────────────
-let panel         = 'left'; // 'recent' | 'left' | 'right'
+let panel         = 'left'; // 'clock' | 'recent' | 'left' | 'right'
 let leftIdx       = 0;      // absolute index into leftItems[]
 let leftOffset    = 0;      // scroll offset for left panel
 let leftItems     = [];     // flat list: {type:'add'} | {type:'root',pi} | {type:'sub',pi,si,name}
@@ -142,6 +153,7 @@ function resolveFileCodec(pi, filePath, fileCodec) {
 
 // ── text helpers ─────────────────────────────────────────────────────────────
 function gpad(s, w) { s = String(s); return s + ' '.repeat(Math.max(0, w - s.length)); }
+function fit(s, w)  { s = String(s); if (s.length > w) s = s.slice(0, Math.max(0, w - 3)) + '...'; return s + ' '.repeat(Math.max(0, w - s.length)); }
 function hesc(s)    { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function panelHeader(title, inner) {
@@ -151,38 +163,52 @@ function panelHeader(title, inner) {
   return '┌' + '─'.repeat(l) + t + '─'.repeat(rem - l) + '┐';
 }
 
+// ── scrollbar helper ─────────────────────────────────────────────────────────
+// Returns HTML for the right-border character of a panel row.
+// No scrollbar (│) when everything fits; track (░) + thumb (█) when it doesn't.
+function scrollBorder(r, total, offset) {
+  if (total <= ROWS) return hesc('│');
+  const thumbH   = Math.max(1, Math.round(ROWS * ROWS / total));
+  const thumbTop = Math.round((ROWS - thumbH) * offset / (total - ROWS));
+  if (r >= thumbTop && r < thumbTop + thumbH) return hesc('█');
+  return '<span class="gate-dim">░</span>';
+}
+
 // ── left panel row ───────────────────────────────────────────────────────────
 function leftRowHtml(r) {
+  const rb    = scrollBorder(r, leftItems.length, leftOffset);
   const ri    = leftOffset + r;
   const item  = leftItems[ri];
-  if (!item) return hesc('│' + ' '.repeat(LI) + '│');
+  if (!item) return hesc('│' + ' '.repeat(LI)) + rb;
   const isSel = panel === 'left' && leftIdx === ri;
 
   if (item.type === 'add') {
     const inner = gpad(' \\  ADD NEW FOLDER TO LIST', LI);
-    if (isSel) return hesc('│') + '<span class="gate-sel">' + hesc(inner) + '</span>' + hesc('│');
-    return hesc('│' + inner + '│');
+    if (isSel) return hesc('│') + '<span class="gate-sel">' + hesc(inner) + '</span>' + rb;
+    return hesc('│' + inner) + rb;
   }
 
   if (item.type === 'root') {
     const proj   = projects[item.pi];
     const badge  = codecBadge((proj.folderCodecs || {})[''] ?? null);
     const prefix = ' ' + (item.isLastRoot ? '└─ ' : '├─ ');
-    const name   = gpad(proj.name, LI - 4 - badge.length - (badge ? 1 : 0)) + (badge ? badge + ' ' : '');
-    if (isSel) return hesc('│') + hesc(prefix) + '<span class="gate-sel">' + hesc(name) + '</span>' + hesc('│');
-    return hesc('│' + prefix + name + '│');
+    const availW = Math.max(3, LI - 4 - badge.length - (badge ? 1 : 0));
+    const name   = fit(proj.name, availW) + (badge ? badge + ' ' : '');
+    if (isSel) return hesc('│') + hesc(prefix) + '<span class="gate-sel">' + hesc(name) + '</span>' + rb;
+    return hesc('│' + prefix + name) + rb;
   }
 
   if (item.type === 'sub') {
     const proj   = projects[item.pi];
     const badge  = codecBadge((proj.folderCodecs || {})[item.path] ?? null);
     const prefix = makePrefix(item.ancestorIsLasts, item.isLast);
-    const name   = gpad(item.name, LI - prefix.length - badge.length - (badge ? 1 : 0)) + (badge ? badge + ' ' : '');
-    if (isSel) return hesc('│') + hesc(prefix) + '<span class="gate-sel">' + hesc(name) + '</span>' + hesc('│');
-    return hesc('│' + prefix + name + '│');
+    const availW = Math.max(3, LI - prefix.length - badge.length - (badge ? 1 : 0));
+    const name   = fit(item.name, availW) + (badge ? badge + ' ' : '');
+    if (isSel) return hesc('│') + hesc(prefix) + '<span class="gate-sel">' + hesc(name) + '</span>' + rb;
+    return hesc('│' + prefix + name) + rb;
   }
 
-  return hesc('│' + ' '.repeat(LI) + '│');
+  return hesc('│' + ' '.repeat(LI)) + rb;
 }
 
 // ── right panel row ──────────────────────────────────────────────────────────
@@ -192,24 +218,25 @@ function rightRowHtml(r) {
     return hesc('│' + inner + '│');
   }
 
+  const rb   = scrollBorder(r, rightItems.length, rightOffset);
   const ri   = rightOffset + r;
   const item = rightItems[ri];
-  if (!item) return hesc('│' + ' '.repeat(LI) + '│');
+  if (!item) return hesc('│' + ' '.repeat(LI)) + rb;
 
   const isSel = panel === 'right' && ri === rightIdx;
   let inner;
   if (item.type === 'up') {
-    inner = gpad(' ../  Up a Level', LI - 1) + ' ';
+    inner = fit(' ../  Up a Level', LI - 1) + ' ';
   } else if (item.type === 'dir') {
     const badge = codecBadge((projects[selProjIdx]?.folderCodecs || {})[item.path] ?? null);
-    inner = gpad(' ' + item.name + ' <DIR>', LI - badge.length - 1) + badge + ' ';
+    inner = fit(' ' + item.name + ' <DIR>', LI - badge.length - 1) + badge + ' ';
   } else {
     const badge = codecBadge(item.codec);
-    inner = gpad(' ' + item.name, LI - badge.length - 1) + badge + ' ';
+    inner = fit(' ' + item.name, LI - badge.length - 1) + badge + ' ';
   }
 
-  if (isSel) return hesc('│') + '<span class="gate-sel">' + hesc(inner) + '</span>' + hesc('│');
-  return hesc('│' + inner + '│');
+  if (isSel) return hesc('│') + '<span class="gate-sel">' + hesc(inner) + '</span>' + rb;
+  return hesc('│' + inner) + rb;
 }
 
 // ── F-key bar (line 25) ──────────────────────────────────────────────────────
@@ -230,14 +257,25 @@ function fkeyBar() {
   return chips + nav;
 }
 
+// ── clock speed line ─────────────────────────────────────────────────────────
+function clockSpeedLine() {
+  const lbl  = CLOCK_SPEEDS[clockSpeed].label;
+  const val  = '[' + lbl + ']';
+  const line = 'Clock: ' + val;
+  const rest = hesc(' '.repeat(Math.max(0, 80 - line.length)));
+  if (panel === 'clock')
+    return hesc('Clock: ') + '<span class="gate-sel">' + hesc(val) + '</span>' + rest;
+  return hesc(line) + rest;
+}
+
 // ── draw ─────────────────────────────────────────────────────────────────────
 function draw() {
   const lines = [];
 
-  // lines 1-4: header
-  lines.push(hesc('bas-js 1.3.61'));
-  lines.push(hesc('(C) Copyright Krit Pasupa'));
-  lines.push(hesc('github.com/kpasupa'));
+  // lines 1-3: header (2 info lines + clock speed control)
+  lines.push(hesc('bas-js 1.3.63'));
+  lines.push(hesc('(C) Copyright Krit Pasupa, github.com/kpasupa'));
+  lines.push(clockSpeedLine());
   lines.push('');
 
   // line 5: recent BAS (selectable) or status message
@@ -376,7 +414,8 @@ async function runBas(pi, item) {
   const boot     = item.name.replace(/\.BAS$/i, '');
   const resolved = resolveFileCodec(pi, item.name, item.codec);
   await setActiveProject({ handle: proj.handle, boot, name: proj.name, codec: resolved ?? 'none' });
-  window._bas_codec = codecForRuntime(resolved);
+  window._bas_codec   = codecForRuntime(resolved);
+  window._bas_clockMs = CLOCK_SPEEDS[clockSpeed].ms;
 
   recentBas = { folderName: proj.name, basFile: item.name, codec: item.codec };
   await saveRecent();
@@ -423,15 +462,33 @@ async function removeFolder(pi) {
 // ── keyboard ─────────────────────────────────────────────────────────────────
 function gateKeydown(e) {
 
-  // ── global: 4 toggles autorun ──────────────────────────────
+  // ── global: 4/F4 toggles autorun; [/] cycles clock speed ──
   if (e.key === '4' || e.key === 'F4') {
     e.preventDefault(); autoRun = !autoRun; saveAutoRun(); draw(); return;
+  }
+  if (e.key === '[') {
+    e.preventDefault(); clockSpeed = Math.max(0, clockSpeed - 1); saveClockSpeed(); draw(); return;
+  }
+  if (e.key === ']') {
+    e.preventDefault(); clockSpeed = Math.min(CLOCK_SPEEDS.length - 1, clockSpeed + 1); saveClockSpeed(); draw(); return;
+  }
+
+  // ── clock speed row ────────────────────────────────────────
+  if (panel === 'clock') {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault(); panel = recentBas ? 'recent' : 'left'; draw();
+    } else if (e.key === 'Enter') {
+      e.preventDefault(); clockSpeed = (clockSpeed + 1) % CLOCK_SPEEDS.length; saveClockSpeed(); draw();
+    }
+    return;
   }
 
   // ── recent BAS row ─────────────────────────────────────────
   if (panel === 'recent') {
     if (e.key === 'ArrowDown') {
       e.preventDefault(); panel = 'left'; leftIdx = 0; draw();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault(); panel = 'clock'; draw();
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (!recentBas) return;
@@ -454,6 +511,7 @@ function gateKeydown(e) {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (leftIdx === 0 && recentBas) { panel = 'recent'; draw(); }
+      else if (leftIdx === 0) { panel = 'clock'; draw(); }
       else { leftIdx--; clampLeft(); draw(); }
     } else if (e.key === 'ArrowRight' || (e.key === 'Tab' && !e.shiftKey)) {
       e.preventDefault();

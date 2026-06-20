@@ -200,5 +200,5 @@ src/
     bytes.js            int16 LE
     date.js             packed DMY dates
   print/
-    report.js           LPRINT capture → HTML table → print preview
+    lprint.js           LPRINT capture → HTML table → print preview
 ```

@@ -159,7 +159,7 @@ function fixSpill(cells) {
   return cells;
 }
 
-function renderReportHTML(lines) {
+function renderLprintHTML(lines) {
   // An HTML table for any report that has a '|' column ruler (position-based slicing handles
   // aligned AND concatenated-field reports). A report with no ruler at all falls back to
   // faithful monospace <pre> (the print dialog still gives Scale + page numbers + Save-PDF).
@@ -198,8 +198,8 @@ const REPORT_CSS = `
 
 // Render the captured lines into a hidden iframe and invoke the browser's native print
 // preview (no popup blocker, unlike window.open). The user gets Scale + page numbers + PDF.
-function showPrintPreview(lines, title = 'Report') {
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${REPORT_CSS}</style></head><body>${renderReportHTML(lines)}</body></html>`;
+function showLprintPreview(lines, title = 'Report') {
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${REPORT_CSS}</style></head><body>${renderLprintHTML(lines)}</body></html>`;
   let frame = document.getElementById('__report_frame');
   if (frame) frame.remove();
   frame = document.createElement('iframe');

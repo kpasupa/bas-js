@@ -50,7 +50,7 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
   window._activeTerm = term;  // exposed for external abort() calls (e.g. Ctrl+C+C)
 
   const bas = new Basic(s, term, loadBas);
-  bas.onPrintReady = (lines) => showPrintPreview(lines, 'Report');
+  bas.onPrintReady = (lines) => showLprintPreview(lines, 'Report');
   const gfxEl = document.getElementById('gfx');
   if (gfxEl) bas.gfx = new Graphics(gfxEl);     // SCREEN 1/2 graphics on the overlay canvas
   bas.audio = new SoundEngine();                // SOUND / PLAY via Web Audio
@@ -76,7 +76,7 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
         s.color(7, 0); s.locate(25, 1); s.put(`[ "${prog}" not found — press any key ]`); s.render(); await term.inputKey(); break;
       }
       const res = await bas.runText(src);
-      if (!bas.printer.isEmpty()) { showPrintPreview(bas.printer.lines, prog); bas.printer.reset(); }
+      if (!bas.printer.isEmpty()) { showLprintPreview(bas.printer.lines, prog); bas.printer.reset(); }
       if (res && res.t === 'chain') {
         console.info(`[bas] ${prog}.BAS → CHAIN ${res.name}`);
         // Bare name (no slash) → same directory as the current program.

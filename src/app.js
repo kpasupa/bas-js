@@ -16,7 +16,7 @@ function _setFavicon(url) {
 }
 function _detectDefaultFavicon() {
   return new Promise(resolve => {
-    const candidates = ['./favicon.ico', './favicon.png'];
+    const candidates = ['./src/favicon.ico', './src/favicon.png'];
     let i = 0;
     const tryNext = () => {
       if (i >= candidates.length) { resolve(null); return; }

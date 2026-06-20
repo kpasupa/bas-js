@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>bas-js</title>
+<link rel="icon" href="src/favicon.png">
 <style>
 
   @font-face {
@@ -98,35 +99,37 @@
   // is ~0, so that ratio is the conversion factor directly (≈1 on macOS, ≈DPR on Windows),
   // correct for any display density — Retina, HiDPI, or plain — without knowing the OS.
   let _resizeTimer = null;
-  function fixSize() {
+  function fixSize(reason) {
     // Skip resize if any fullscreen is active: programmatic (fullscreenElement) OR
     // F11 browser fullscreen (window fills the entire screen — fullscreenElement stays null).
     if (document.fullscreenElement || document.webkitFullscreenElement ||
-        (window.outerWidth === screen.width && window.outerHeight === screen.height)) return;
+        (window.outerWidth === screen.width && window.outerHeight === screen.height)) { console.log('[fixSize] skip — fullscreen'); return; }
     const oW = window.outerWidth, oH = window.outerHeight;
     const iW = window.innerWidth, iH = window.innerHeight;
-    if (oW < 5 || oH < 5 || iW < 5 || iH < 5) return;
+    if (oW < 5 || oH < 5 || iW < 5 || iH < 5) { console.log('[fixSize] skip — window too small', {oW,oH,iW,iH}); return; }
     const f = oW / iW;
     const r = _scr.getBoundingClientRect();
     const scrW = Math.round(r.width), scrH = Math.round(r.height);
     const w = Math.round(f * scrW + (oW - f * iW));
     const h = Math.round(f * scrH + (oH - f * iH));
-    if (Math.abs(w - oW) <= 1 && Math.abs(h - oH) <= 1) return;
+    console.log('[fixSize]', reason || 'unknown', { oW, oH, iW, iH, f: f.toFixed(3), scrW, scrH, targetW: w, targetH: h, delta: `${w-oW},${h-oH}` });
+    if (Math.abs(w - oW) <= 1 && Math.abs(h - oH) <= 1) { console.log('[fixSize] already correct, skip'); return; }
     const sx = window.screenX, sy = window.screenY;
     window.resizeTo(w, h);
     window.moveTo(sx, sy);
+    console.log('[fixSize] resized → after:', { outerW: window.outerWidth, outerH: window.outerHeight });
     localStorage.setItem(_SKEY, JSON.stringify({ w, h }));
   }
-  if (!_isReload) fixSize();
+  if (!_isReload) fixSize('initial');
   // Re-measure once webfonts load: 80ch is measured against the fallback font until then.
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fixSize);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fixSize('fonts-ready'));
   window.addEventListener('resize', () => {
     clearTimeout(_resizeTimer);
-    _resizeTimer = setTimeout(fixSize, 150);
+    _resizeTimer = setTimeout(() => fixSize('resize-event'), 150);
   });
   // Resume auto-sizing when exiting fullscreen (F11 or programmatic).
-  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) fixSize(); });
-  document.addEventListener('webkitfullscreenchange', () => { if (!document.webkitFullscreenElement) fixSize(); });
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) fixSize('fullscreen-exit'); });
+  document.addEventListener('webkitfullscreenchange', () => { if (!document.webkitFullscreenElement) fixSize('fullscreen-exit'); });
   window.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
 </script>
 

@@ -6,6 +6,8 @@ Built to revive old DOS GW-BASIC applications. Point it at any folder of `.BAS` 
 
 > **Requires Chrome or Edge** — uses the [File System Access API](https://developer.chrome.com/docs/capabilities/web-apis/file-system-access) for reading and writing files.
 
+> **Compatibility notice:** This project was originally developed to run a specific set of legacy GW-BASIC applications. It covers a broad subset of the language, but full compatibility with all GW-BASIC programs is not guaranteed. If you encounter a missing keyword or incorrect behaviour, bug reports and contributions are welcome.
+
 ---
 
 ## Quick start
@@ -99,9 +101,11 @@ Hardware keywords (PEEK/POKE/CALL/INP/OUT/WAIT/VARPTR) and editor commands (LIST
 
 ## Samples
 
-`sample/INTERPRETER.BAS` is a menu that walks every command group (BASIC / GW-BASIC → Commands / Statements / Functions / Operators) with a live demo per keyword — including graphics, sound, and CHAIN demos.
+`sample/INTERPRETER.BAS` is the root menu. From there:
 
-`sample/MENU.BAS` + `MATH.BAS` are a smaller standalone CHAIN demo.
+- **BASIC/** — core language demos: commands, statements, functions, operators
+- **GWBASIC/** — PC-extension demos: files, graphics (SCREEN 0/1/2), sound, event traps, CHAIN/COMMON, text colour picker, screen mode switcher
+- **DEMO/** — standalone CHAIN demo (`MENU.BAS` → `MATH.BAS` → back)
 
 ---
 
@@ -153,9 +157,10 @@ interpreter.html        keyword-by-keyword coverage map
 run.bat                 Windows launcher (dedicated browser profile)
 run.sh                  macOS/Linux launcher
 sample/
-  INTERPRETER.BAS       command test menu (BASIC / GW-BASIC, one demo per keyword group)
-  BASIC/  GWBASIC/      nested menu + demo programs it CHAINs to
-  MENU.BAS  MATH.BAS    small standalone CHAIN demo
+  INTERPRETER.BAS       root menu (BASIC / GW-BASIC / Demo)
+  BASIC/                core-language demos (commands, statements, functions, operators)
+  GWBASIC/              PC-extension demos (files, graphics, sound, CHAIN, colour, screen modes)
+  DEMO/                 standalone CHAIN demo (MENU.BAS → MATH.BAS → back)
 src/
   gate.js               project browser/launcher — folder list, file picker, clock, run
   app.js                boot loop, tab title/favicon, gfx/audio wiring

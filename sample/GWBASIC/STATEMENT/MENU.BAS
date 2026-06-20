@@ -4,7 +4,7 @@
 40 LOCATE 4,3: PRINT "   1 CLS/COLOR/LOCATE/BEEP    8 Random files (FIELD/PUT/GET)"
 50 LOCATE 5,3: PRINT "   2 PRINT USING              9 Sequential files (WRITE#/INPUT#)"
 60 LOCATE 6,3: PRINT "   3 LINE INPUT              10 Graphics (SCREEN/LINE/CIRCLE/PAINT)"
-70 LOCATE 7,3: PRINT "   4 WRITE                  11 Sound (SOUND/PLAY)"
+70 LOCATE 7,3: PRINT "   4 WRITE                   11 Sound (SOUND/PLAY)"
 80 LOCATE 8,3: PRINT "   5 SWAP / ERASE            12 CHAIN / COMMON"
 90 LOCATE 9,3: PRINT "   6 DEFINT / DEFSTR         13 ON KEY / ON TIMER (event traps)"
 100 LOCATE 10,3: PRINT "   7 ON ERROR / RESUME"

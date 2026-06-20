@@ -273,7 +273,7 @@ function draw() {
   const lines = [];
 
   // lines 1-3: header (2 info lines + clock speed control)
-  lines.push(hesc('bas-js 1.3.68'));
+  lines.push(hesc('bas-js 1.3.67'));
   lines.push(hesc('(C) Copyright Krit Pasupa, github.com/kpasupa'));
   lines.push(clockSpeedLine());
   lines.push('');
@@ -281,8 +281,7 @@ function draw() {
   // line 5: recent BAS (selectable) or status message
   if (recentBas) {
     const badge = codecBadge(recentBas.codec) ? ' ' + codecBadge(recentBas.codec) : '';
-    const hint  = _autoRunPending ? ' [press any key to reconnect]' : '';
-    const rline = gpad('Recent BAS: ' + recentBas.folderName + '/' + recentBas.basFile + badge + hint, 80);
+    const rline = gpad('Recent BAS: ' + recentBas.folderName + '/' + recentBas.basFile + badge, 80);
     lines.push(panel === 'recent'
       ? '<span class="gate-sel">' + hesc(rline) + '</span>'
       : hesc(rline));
@@ -413,22 +412,16 @@ async function grantAndScan(pi) {
 
 // ── auto-run recent BAS if folder permission is still live ───────────────────
 // Uses queryPermission (no gesture needed) — silently no-ops if permission expired.
-// If permission needs re-granting ('prompt'), sets _autoRunPending so the next
-// user keypress (a valid gesture) triggers requestPermission automatically.
-let _autoRunPending = false;
 async function tryAutoRun() {
   if (!autoRun || !recentBas) return;
   const pi = projects.findIndex(p => p.name === recentBas.folderName);
   if (pi < 0) return;
   try {
     const perm = await projects[pi].handle.queryPermission({ mode: 'readwrite' });
-    if (perm === 'granted') {
-      await scanAndSetup(pi);
-      const f = allRightFiles.find(x => x.name === recentBas.basFile);
-      if (f) await runBas(pi, f);
-    } else if (perm === 'prompt') {
-      _autoRunPending = true; draw();
-    }
+    if (perm !== 'granted') return;
+    await scanAndSetup(pi);
+    const f = allRightFiles.find(x => x.name === recentBas.basFile);
+    if (f) await runBas(pi, f);
   } catch(e) { /* permission expired or file gone — just stay on gate */ }
 }
 
@@ -485,21 +478,6 @@ async function removeFolder(pi) {
 
 // ── keyboard ─────────────────────────────────────────────────────────────────
 function gateKeydown(e) {
-
-  // ── autorun pending: first keypress is the user gesture — request permission ──
-  if (_autoRunPending) {
-    _autoRunPending = false;
-    e.preventDefault();
-    const pi = projects.findIndex(p => p.name === recentBas?.folderName);
-    if (pi >= 0) {
-      grantAndScan(pi).then(ok => {
-        if (!ok) return;
-        const f = allRightFiles.find(x => x.name === recentBas.basFile);
-        if (f) runBas(pi, f); else { panel = 'recent'; draw(); }
-      });
-    }
-    return;
-  }
 
   // ── global: 4/F4 toggles autorun; [/] cycles clock speed ──
   if (e.key === '4' || e.key === 'F4') {

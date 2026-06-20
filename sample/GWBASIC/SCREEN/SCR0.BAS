@@ -1,0 +1,11 @@
+10 SCREEN 0: CLS: COLOR 7,0
+20 LOCATE 1,25: COLOR 0,7: PRINT " SCREEN 0 — 80-column text mode ": COLOR 7,0
+30 LOCATE 2,1: PRINT STRING$(80,45)
+40 LOCATE 4,5: PRINT "80 columns x 25 rows,  16 foreground colours,  8 background colours."
+50 LOCATE 6,2: FOR C=0 TO 15: COLOR C,0: PRINT " "; : IF C<10 THEN PRINT " ";
+60 LOCATE 6,2+C*4: PRINT C; : NEXT: COLOR 7,0
+70 LOCATE 8,2: FOR B=0 TO 7: COLOR 15,B: PRINT " bg"; B; " ";: NEXT: COLOR 7,0
+80 LOCATE 10,1: PRINT STRING$(80,196)
+90 LOCATE 12,5: PRINT "LOCATE/PRINT and COLOR work here.  No canvas overlay."
+100 LOCATE 14,5: PRINT "Press any key to return..."
+110 A$=INPUT$(1): CHAIN "GWBASIC/SCREEN/MENU"

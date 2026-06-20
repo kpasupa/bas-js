@@ -273,7 +273,7 @@ function draw() {
   const lines = [];
 
   // lines 1-3: header (2 info lines + clock speed control)
-  lines.push(hesc('bas-js 1.3.63'));
+  lines.push(hesc('bas-js 1.3.64'));
   lines.push(hesc('(C) Copyright Krit Pasupa, github.com/kpasupa'));
   lines.push(clockSpeedLine());
   lines.push('');
@@ -389,7 +389,17 @@ async function grantAndScan(pi) {
     if (perm !== 'granted') { gateMsg = 'Permission denied.'; draw(); return false; }
   } catch(e) { gateMsg = 'Error: ' + e.message; draw(); return false; }
   gateMsg = 'Scanning…'; draw();
-  try { await scanAndSetup(pi); } catch(e) { gateMsg = 'Scan error: ' + e.message; draw(); return false; }
+  try { await scanAndSetup(pi); } catch(e) {
+    if (e instanceof DOMException && e.name === 'NotFoundError') {
+      projects.splice(pi, 1);
+      await idbSetKey(IDB.PROJECTS, projects);
+      rebuildLeftItems();
+      gateMsg = 'Folder not found — removed from list.'; draw();
+    } else {
+      gateMsg = 'Scan error: ' + e.message; draw();
+    }
+    return false;
+  }
   gateMsg = ''; return true;
 }
 

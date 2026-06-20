@@ -12,10 +12,11 @@
 100 LOCATE 11,5: PRINT "   0 black  1 blue  2 green  3 cyan"
 110 LOCATE 12,5: PRINT "   4 red    5 magenta       6 brown  7 white"
 120 LOCATE 14,1: PRINT STRING$(80,45)
-130 LOCATE 16,5: INPUT "Text colour  (-1 to go back): ",TC
-140 IF TC<0 THEN CHAIN "GWBASIC/MENU"
-150 LOCATE 17,5: INPUT "Background (0-7): ",SC
-155 IF TC MOD 16 = SC THEN COLOR 7,0:LOCATE 19,5:PRINT "Same colour — invisible. Pick again.":GOTO 130
+125 LOCATE 15,5: COLOR 8,0: PRINT "Enter 0,0 to go back": COLOR 7,0
+130 LOCATE 16,5: INPUT "Text colour  (0-15): ",TC
+150 LOCATE 17,5: INPUT "Background   (0-7):  ",SC
+155 IF TC=0 AND SC=0 THEN CHAIN "GWBASIC/MENU"
+156 IF TC MOD 16 = SC THEN COLOR 7,0:LOCATE 19,5:PRINT "Same colour — invisible. Pick again.":GOTO 130
 160 COLOR TC,SC: CLS
 170 CHAIN "GWBASIC/COLOR/SHOW"
 300 REM re-entered from SHOW via CHAIN - colours still active, no clear yet

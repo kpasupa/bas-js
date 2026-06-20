@@ -65,7 +65,6 @@ Navigate to the `Clock: [NORMAL]` line at the top and press **Enter** to cycle t
 | Key | Action |
 |-----|--------|
 | `Ctrl+C+C` | Abort program and return to gate |
-| `Esc` | Same as above |
 
 ---
 

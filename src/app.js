@@ -47,7 +47,7 @@ async function runApp(el, status, boot = DEFAULT_BOOT) {
   const s = new Screen(el);
   const term = new Terminal(s);
   term.attach();
-  window._activeTerm = term;  // exposed so ESC handler in index.html can abort()
+  window._activeTerm = term;  // exposed for external abort() calls (e.g. Ctrl+C+C)
 
   const bas = new Basic(s, term, loadBas);
   bas.onPrintReady = (lines) => showPrintPreview(lines, 'Report');

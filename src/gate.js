@@ -264,7 +264,7 @@ function clockSpeedLine() {
   const line = 'Clock: ' + val;
   const rest = hesc(' '.repeat(Math.max(0, 80 - line.length)));
   if (panel === 'clock')
-    return hesc('Clock: ') + '<span class="gate-sel">' + hesc(val) + '</span>' + rest;
+    return hesc('Clock: [') + '<span class="gate-sel">' + hesc(lbl) + '</span>' + hesc(']') + rest;
   return hesc(line) + rest;
 }
 
@@ -273,7 +273,7 @@ function draw() {
   const lines = [];
 
   // lines 1-3: header (2 info lines + clock speed control)
-  lines.push(hesc('bas-js 1.3.64'));
+  lines.push(hesc('bas-js 1.3.65'));
   lines.push(hesc('(C) Copyright Krit Pasupa, github.com/kpasupa'));
   lines.push(clockSpeedLine());
   lines.push('');
